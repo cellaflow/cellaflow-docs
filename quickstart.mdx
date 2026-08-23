@@ -1,0 +1,183 @@
+---
+title: "Quickstart"
+description: "From zero to a running crash-proof AI agent in under 3 minutes."
+icon: "play"
+---
+
+# Quickstart
+
+You'll start the CellaFlow engine, install the Python SDK, run a workflow, crash it mid-execution, and watch it recover — all in under 3 minutes.
+
+## Prerequisites
+
+- Docker installed
+- Python 3.9+
+
+---
+
+## Step 1 — Start the CellaFlow Engine
+
+The engine is the durable state backend that all your agents connect to. Run it locally with a single Docker command:
+
+```bash
+docker run -d \
+  --name cellaflow \
+  -p 50051:50051 \
+  ghcr.io/cellaflow/cellaflow:latest
+```
+
+Verify it's healthy:
+
+```bash
+curl http://localhost:8080/health/ready
+# → {"status":"ready"}
+```
+
+<Tip>
+The engine persists state to RocksDB inside the container. For production, mount a volume: add `-v $(pwd)/data:/data` to the Docker command.
+</Tip>
+
+## Step 2 — Install the Python SDK
+
+Install the [`cellaflow`](https://pypi.org/project/cellaflow/) package from PyPI:
+
+```bash
+pip install cellaflow
+```
+
+---
+
+## Step 3 — Run your first durable workflow
+
+Create a file called `research_agent.py`:
+
+```python
+import sys
+from cellaflow import workflow, step, tool, IdempotencyScope
+
+@tool(scope=IdempotencyScope.SCOPE_SESSION_WIDE)
+def search_web(query: str) -> dict:
+    print(f"  🌐 Calling search API for: '{query}'")
+    # Simulate an API call
+    return {"query": query, "results": ["Result A", "Result B", "Result C"]}
+
+@step
+def summarize(data: dict) -> str:
+    print(f"  📝 Summarizing {len(data['results'])} results...")
+    return f"Summary: found {len(data['results'])} items for '{data['query']}'"
+
+@step
+def format_report(summary: str) -> str:
+    print(f"  📄 Formatting final report...")
+    return f"REPORT | {summary}"
+
+@workflow(version="1.0.0")
+def research_workflow(topic: str) -> str:
+    data = search_web(topic)
+    summary = summarize(data)
+    report = format_report(summary)
+    return report
+
+if __name__ == "__main__":
+    session_id = sys.argv[1] if len(sys.argv) > 1 else None
+    
+    if session_id:
+        print(f"\n♻️  Resuming session: {session_id}\n")
+        result = research_workflow("autonomous AI architectures", _session_id=session_id)
+    else:
+        result = research_workflow("autonomous AI architectures")
+    
+    print(f"\n✅ Result: {result}")
+```
+
+Run it:
+
+```bash
+python research_agent.py
+```
+
+You'll see each step execute and print to stdout:
+
+```
+  🌐 Calling search API for: 'autonomous AI architectures'
+  📝 Summarizing 3 results...
+  📄 Formatting final report...
+
+✅ Result: REPORT | Summary: found 3 items for 'autonomous AI architectures'
+```
+
+---
+
+## Step 4 — Simulate a crash and recover
+
+This is the wonder moment. Add a crash mid-workflow to see replay in action.
+
+Modify `research_agent.py` — add `import time` and insert a crash after `summarize`:
+
+```python
+@step
+def summarize(data: dict) -> str:
+    print(f"  📝 Summarizing {len(data['results'])} results...")
+    # Simulate a crash after this step completes
+    import os, time
+    time.sleep(0.5)
+    os.abort()  # 💥 Crash here
+    return f"Summary: found {len(data['results'])} items for '{data['query']}'"
+```
+
+Run once to get a session ID from the crash:
+
+```bash
+python research_agent.py
+# Prints session ID before crashing, e.g.:
+# Session started: 3f7491d9-e932-4467-bcda-370fb5c1a7e4
+#   🌐 Calling search API for: 'autonomous AI architectures'
+#   📝 Summarizing 3 results...
+# [crash]
+```
+
+<Tip>
+The session ID is logged automatically by the `@workflow` decorator. You can also retrieve it from `research_workflow.last_session_id` after a partial run.
+</Tip>
+
+Remove the `os.abort()` line, then resume with the session ID:
+
+```bash
+python research_agent.py 3f7491d9-e932-4467-bcda-370fb5c1a7e4
+```
+
+Output:
+
+```
+♻️  Resuming session: 3f7491d9-e932-4467-bcda-370fb5c1a7e4
+
+  ⚡ search_web [CACHED — 0ms]
+  ⚡ summarize  [CACHED — 0ms]
+  📄 Formatting final report...
+
+✅ Result: REPORT | Summary: found 3 items for 'autonomous AI architectures'
+```
+
+<Check>
+**You just saw CellaFlow's core value:**
+
+- `search_web` and `summarize` were **not re-executed** — their results were replayed from the event graph in 0ms
+- Execution resumed live at `format_report`, exactly where the crash interrupted it
+- No re-spent API tokens. No duplicate side effects.
+</Check>
+
+---
+
+## What's next?
+
+<CardGroup cols={3}>
+  <Card title="Core Concepts" icon="book" href="/concepts">
+    Understand idempotency, replay semantics, and Non-Persistable Zones.
+  </Card>
+  <Card title="Python SDK Reference" icon="code" href="/sdks/python/overview">
+    Full `@workflow`, `@step`, `@tool`, and async guide.
+  </Card>
+  <Card title="LangGraph Integration" icon="git-branch" href="/sdks/python/langgraph">
+    Drop in `CellaflowSaver` as a LangGraph checkpointer.
+  </Card>
+</CardGroup>

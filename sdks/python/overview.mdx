@@ -1,0 +1,136 @@
+---
+title: "Python SDK"
+description: "Install the CellaFlow Python SDK and run your first durable workflow."
+icon: "python"
+---
+
+# Python SDK
+
+The official CellaFlow Python SDK. Wraps the gRPC engine with zero-friction decorators for durable execution, crash recovery, and multi-agent coordination.
+
+[![PyPI version](https://img.shields.io/pypi/v/cellaflow.svg?color=blue)](https://pypi.org/project/cellaflow/)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://pypi.org/project/cellaflow/)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20%2F%20MIT-blue.svg)](https://github.com/cellaflow/cellaflow-sdks)
+
+---
+
+## Installation
+
+Install [`cellaflow`](https://pypi.org/project/cellaflow/) using `pip`:
+
+<CodeGroup>
+```bash Core SDK
+pip install cellaflow
+```
+
+```bash With LangGraph support
+pip install "cellaflow[langgraph]"
+```
+</CodeGroup>
+
+<Note>
+The core `cellaflow` package is lightweight — no LangGraph, Pydantic, or LangChain pulled in. If your environment already has `langgraph >= 0.2.0`, `from cellaflow import CellaflowSaver` works immediately without the extra install.
+</Note>
+
+---
+
+## Synchronous Workflow
+
+```python
+from cellaflow import workflow, step, tool, IdempotencyScope
+
+@tool(scope=IdempotencyScope.SCOPE_SESSION_WIDE)
+def search_web(query: str) -> dict:
+    """Idempotent: runs once per session, even if 50 agents call it simultaneously."""
+    print(f"  🌐 Searching: {query}")
+    return {"query": query, "results": ["Result A", "Result B"]}
+
+@step
+def summarize(data: dict) -> str:
+    return f"Processed {len(data['results'])} results for '{data['query']}'"
+
+@workflow(version="1.0.0")
+def research_workflow(topic: str) -> str:
+    data = search_web(topic)
+    return summarize(data)
+
+result = research_workflow("autonomous AI")
+print(result)
+```
+
+---
+
+## Asynchronous Workflow
+
+The SDK natively supports `async def` coroutines and is safe across async event loops:
+
+```python
+import asyncio
+from cellaflow import workflow, step, tool, IdempotencyScope
+
+@tool(agent_id="researcher", scope=IdempotencyScope.SCOPE_AGENT_PRIVATE)
+async def fetch_market_data(ticker: str) -> dict:
+    await asyncio.sleep(0.5)  # Non-blocking I/O
+    return {"ticker": ticker, "price": 142.50}
+
+@step(agent_id="analyst")
+async def analyze(market_data: dict) -> str:
+    return f"BUY signal for {market_data['ticker']} at ${market_data['price']}"
+
+@workflow(version="1.0.0")
+async def swarm_workflow(ticker: str) -> str:
+    data = await fetch_market_data(ticker)
+    return await analyze(data)
+
+result = asyncio.run(swarm_workflow("AAPL"))
+print(result)
+```
+
+---
+
+## Session Recovery
+
+Resume an interrupted workflow by passing `_session_id`:
+
+```python
+# Original run — crashes at step 2
+result = research_workflow("autonomous AI")
+# Session ID is logged: e.g. 3f7491d9-e932-4467-bcda-370fb5c1a7e4
+
+# Resume — completed steps returned instantly from event graph
+result = research_workflow(
+    "autonomous AI",
+    _session_id="3f7491d9-e932-4467-bcda-370fb5c1a7e4"
+)
+```
+
+On resume:
+- Completed steps → **cache hit, 0ms, not re-executed**
+- Pending steps → **live execution continues**
+
+---
+
+## Connection Configuration
+
+By default, the SDK connects to `localhost:50051` over cleartext:
+
+```python
+# Default (local dev)
+@workflow(version="1.0.0")
+def my_workflow(input: str) -> str: ...
+
+# Custom target
+@workflow(version="1.0.0", target="engine.internal:50051", secure=True)
+def my_workflow(input: str) -> str: ...
+```
+
+Environment variable `CELLAFLOW_AUTH_TOKEN` is read automatically for authenticated connections.
+
+---
+
+## Available SDKs
+
+| Language | Package | Status |
+|:---|:---|:---|
+| **Python** | [`cellaflow`](https://pypi.org/project/cellaflow/) | ✅ v0.2.0 Released |
+| **TypeScript** | `@cellaflow/sdk` | 🚧 In Development |

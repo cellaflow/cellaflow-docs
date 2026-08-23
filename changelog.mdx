@@ -1,0 +1,43 @@
+---
+title: "Changelog"
+description: "Release notes and version history for the CellaFlow engine and Python SDK."
+icon: "history"
+---
+
+# Changelog
+
+---
+
+## Python SDK
+
+### v0.2.0 — Latest
+
+- ✅ `@workflow`, `@step`, `@tool` decorators with full `async def` support
+- ✅ `CellaflowSaver` — drop-in LangGraph checkpointer with time-travel and crash recovery
+- ✅ RFC 8785 Canonical JSON + SHA-256 idempotency key derivation
+- ✅ Agent-scoped idempotency (`SCOPE_SESSION_WIDE`, `SCOPE_AGENT_PRIVATE`, `SCOPE_STEP_LOCAL`)
+- ✅ Background lease heartbeat management with fencing token validation
+- ✅ MessagePack serialization for all state payloads (no pickle, no RCE vectors)
+- ✅ `contextvars` isolation — safe for concurrent async workflows in the same process
+- ✅ Low-level `CellaflowClient` for manual session management
+
+Install: [`pip install cellaflow`](https://pypi.org/project/cellaflow/)
+
+---
+
+## CellaFlow Engine
+
+### Latest
+
+- ✅ `WorkflowEngineService` — `StartSession`, `CommitStep`, `GetGraph`
+- ✅ `IdempotencyService` — `CheckIdempotencyCache`, `RenewLease`, `ReleaseLease`
+- ✅ RocksDB-backed append-only event graph
+- ✅ Sequence ordering guard — optimistic concurrency for step commits
+- ✅ Boot recovery — session reconstruction and timer respawning on startup
+- ✅ TLS support (cert + key via environment variables)
+- ✅ Bearer token and `x-api-key` authentication interceptor
+- ✅ gRPC reflection (v1 + v1alpha)
+- ✅ OTLP telemetry (traces + metrics)
+- ✅ Health check HTTP server (`/health/ready`)
+
+Docker: `ghcr.io/cellaflow/cellaflow:latest`

@@ -1,0 +1,26 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- White Background with slight rounded corners -->
+  <rect width="256" height="256" fill="white" rx="32" />
+
+  <defs>
+    <!-- Cyan gradient for the right chevron -->
+    <linearGradient id="chevronGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00D2FF" />
+      <stop offset="100%" stop-color="#0CE39A" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Left Chevron (Dark Blue) -->
+  <path d="M 48,48 L 128,128 L 48,208" 
+        stroke="#042F4B" 
+        stroke-width="56" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" />
+  
+  <!-- Right Chevron (Cyan/Green Gradient) -->
+  <path d="M 128,48 L 208,128 L 128,208" 
+        stroke="url(#chevronGrad)" 
+        stroke-width="56" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" />
+</svg>

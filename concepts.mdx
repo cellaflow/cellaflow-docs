@@ -1,0 +1,153 @@
+---
+title: "Core Concepts"
+description: "The mental model behind CellaFlow — event graphs, deterministic replay, and multi-agent coordination."
+icon: "book"
+---
+
+# Core Concepts
+
+Five concepts explain how CellaFlow works. Once you understand these, the behaviour of every decorator and API call becomes obvious.
+
+---
+
+## 1. The Cognitive Graph
+
+Every CellaFlow workflow maintains an **append-only event graph** stored in RocksDB — a sequence of immutable step records, each containing:
+
+- The step name and sequence number
+- The serialized input and output (MessagePack)
+- The executing agent ID
+- The idempotency key
+- The commit status
+
+This graph is the source of truth for a session. It never mutates — steps are only ever appended. This means:
+
+- **No partial writes** — a step either commits fully or not at all
+- **No state drift** — re-reading the graph always produces the same view
+- **Time travel** — you can inspect any historical state snapshot
+
+```
+Session: 3f7491d9
+├── seq:1  search_web("NVDA")          → {price: 142.50}   ✅ COMMITTED
+├── seq:2  analyze_trends({...})        → "BUY signal"      ✅ COMMITTED  
+└── seq:3  format_report("BUY signal") → [PENDING]         💥 CRASHED
+```
+
+On restart with this session ID, CellaFlow replays seq:1 and seq:2 from the graph (0ms), then resumes live execution at seq:3.
+
+---
+
+## 2. Deterministic Replay
+
+When a workflow is restarted with an existing `session_id`, the `@workflow` decorator:
+
+1. Loads the full event graph from the engine
+2. Intercepts each `@step` / `@tool` call in order
+3. If a completed record exists → **returns the cached output immediately, skipping execution**
+4. If no record exists → **runs the function normally and commits the result**
+
+This means your workflow function runs the same code path every time — the decorators transparently swap out live calls for cache hits. Your code doesn't need to know about replay.
+
+<Note>
+Replay is deterministic by design. The same session ID always produces the same execution order, regardless of which machine or Python version runs it.
+</Note>
+
+---
+
+## 3. Idempotency & Singleflight
+
+Every `@tool` call computes a **canonical idempotency key** before executing:
+
+```
+[session_id]:[version]:[sequence]:[agent_id]:[tool_name]:[RFC8785_SHA256(args)]
+```
+
+The engine checks this key before running the function:
+
+| Engine Response | What Happens |
+|:---|:---|
+| **Cache HIT** | Returns stored result immediately. Function body never runs. |
+| **In-progress (LEASE)** | Waits and subscribes to the result. When the first caller finishes, all waiters receive the same result. This is **singleflight** — 1 execution, N consumers. |
+| **Cache MISS** | Acquires a fencing token, runs the function, commits the result. |
+
+**Singleflight** is the key multi-agent primitive: if 50 agents in a swarm call the same `fetch_market_data("AAPL")` simultaneously, only **one HTTP request executes**. The result broadcasts to all 49 waiting agents. Zero redundant API spend.
+
+### IdempotencyScope
+
+Controls how results are shared across agents:
+
+```python
+# Shared across all agents in the session (default)
+@tool(scope=IdempotencyScope.SCOPE_SESSION_WIDE)
+
+# Only cached for this specific agent_id
+@tool(scope=IdempotencyScope.SCOPE_AGENT_PRIVATE)
+
+# Only cached within the current superstep sequence
+@tool(scope=IdempotencyScope.SCOPE_STEP_LOCAL)
+```
+
+---
+
+## 4. Non-Persistable Zones (NPZ)
+
+Some operations must not be checkpointed mid-execution — specifically, **streaming LLM responses**. If CellaFlow commits a partial token stream to the event graph and then replays it, the downstream consumer receives truncated output.
+
+NPZs solve this by **suspending checkpoint commits** for the duration of the block:
+
+```python
+from cellaflow import workflow, NonPersistableZone
+
+@workflow(version="1.0.0")
+async def streaming_agent(prompt: str):
+    # Steps before this commit normally
+    context = await load_context(prompt)
+    
+    # No checkpoints written during streaming
+    async with NonPersistableZone(ctx):
+        async for token in llm.stream("claude-3-5-sonnet", prompt=context):
+            yield token
+    
+    # Steps after this commit normally
+    await save_result(result)
+```
+
+Inside an NPZ, the engine holds an open transaction but does not flush. If a crash occurs inside an NPZ, the entire block re-executes from its start on recovery — which is the correct behaviour for streaming.
+
+---
+
+## 5. Fencing Tokens & Lease Management
+
+When a `@tool` acquires an idempotency lock, the engine issues a **fencing token** — a monotonically increasing integer tied to the lease. The SDK automatically:
+
+1. Starts a background heartbeat thread that calls `RenewLease` every few seconds
+2. Passes the fencing token when calling `CommitStep`
+3. Releases the lease with `reason="TOOL_ERROR"` if an exception occurs
+
+The engine rejects any commit with a stale fencing token. This prevents **split-brain execution** — if a network partition causes two SDK instances to believe they hold the same lease, only the one with the current token can commit.
+
+<Warning>
+Fencing tokens are an internal mechanism. You don't interact with them directly — the `@tool` decorator manages the entire lease lifecycle automatically.
+</Warning>
+
+---
+
+## Putting it together
+
+```
+@workflow starts
+  │
+  ├─ load event graph from engine
+  │
+  ├─ @step call:
+  │   ├─ check event graph → HIT → return cached output
+  │   └─ MISS → execute → CommitStep → continue
+  │
+  ├─ @tool call:
+  │   ├─ compute idempotency key
+  │   ├─ CheckIdempotency → HIT → return cached output
+  │   ├─ LEASE (in-progress) → subscribe → receive broadcast result
+  │   └─ MISS → acquire fencing token → execute → CommitStep → broadcast
+  │
+  └─ @workflow completes
+```

@@ -1,0 +1,144 @@
+---
+title: "Architecture"
+description: "How the CellaFlow engine, Python SDK, and RocksDB state store fit together."
+icon: "layers"
+---
+
+# Architecture
+
+CellaFlow has three layers that work together: the **Python SDK** (decorators + gRPC client), the **Rust Engine** (state machine + persistence), and **RocksDB** (durable storage).
+
+---
+
+## System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Your Python Application                     │
+│                                                                   │
+│   @workflow          @step              @tool                     │
+│   ─────────          ─────              ──────                   │
+│   • starts session   • commits results  • idempotency check      │
+│   • loads graph      • lease-free       • fencing token lease    │
+│   • replay intercept                    • background heartbeat   │
+│                                                                   │
+│   ───────────────── gRPC (port 50051) ──────────────────────    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    CellaFlow Rust Engine                          │
+│                                                                   │
+│   WorkflowEngineService        IdempotencyService                │
+│   ─────────────────────        ──────────────────                │
+│   • StartSession               • CheckIdempotency                │
+│   • CommitStep                 • CommitIdempotencyKey            │
+│   • GetSessionGraph            • AcquireLease / RenewLease       │
+│   • RegisterWorkflow           • ReleaseLease                    │
+│   • CancelSession                                                 │
+│                                                                   │
+│   ─────────────── RocksDB (embedded) ────────────────────────   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         RocksDB                                   │
+│                                                                   │
+│   sessions/          steps/              idempotency/            │
+│   ─────────          ──────              ─────────────           │
+│   • session metadata  • append-only      • key → result          │
+│   • workflow version    event graph       • fencing tokens        │
+│   • session state      • MessagePack      • lease expiry          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## The Transparent Replay Flow
+
+When a workflow is resumed after a crash, the SDK replays committed steps from the event graph before resuming live execution:
+
+```
+@workflow(version="1.0.0")
+def my_workflow(topic: str) -> str:
+    data   = search_web(topic)       # seq:1
+    result = analyze(data)           # seq:2 ← crashed here
+    report = format_report(result)   # seq:3 ← not yet committed
+    return report
+```
+
+**On restart with session ID:**
+
+```
+1. SDK calls GetSessionGraph → receives [seq:1 ✅, seq:2 ✅]
+2. search_web() intercepted → CACHED (0ms) → returns stored result
+3. analyze()    intercepted → CACHED (0ms) → returns stored result
+4. format_report()          → LIVE → executes → CommitStep(seq:3)
+5. Workflow completes
+```
+
+Zero re-execution of completed steps. Zero re-spent API tokens.
+
+---
+
+## Engine Boot Sequence
+
+The engine follows a strict ordered startup. Every step must succeed before the next begins:
+
+| Step | Action | On Failure |
+|:---|:---|:---|
+| 1 | Load config from environment variables | — |
+| 2 | Initialize OTLP telemetry (traces + metrics → `localhost:4317`) | Degrades gracefully |
+| 3 | Initialize structured JSON logger | — |
+| 4 | Resolve socket bind address | Exit with error |
+| 5 | Register OS signal handlers (SIGINT, SIGTERM) | Exit with error |
+| 6 | Initialize RocksDB storage backend | `exit(1)` |
+| 7 | Create database failure watchdog | — |
+| 8 | Spawn health server (`/health/ready` → 503 until ready) | Continues with warning |
+| 9 | Instantiate gRPC engine service | — |
+| 10 | **Boot recovery** — scan sessions, reconstruct state, respawn timers | Exit with error |
+| 11 | Set `recovery_complete = true` → `/health/ready` returns 200 | — |
+| 12 | Configure auth interceptor (Bearer / `x-api-key`) | — |
+| 13 | Configure TLS if cert + key provided | Exit with error |
+| 14 | Register gRPC reflection services | Exit with error |
+| 15 | Start Tonic gRPC server | — |
+
+<Warning>
+Step 10 (boot recovery) is intentionally strict — the engine will not start with a partial view of durable state. Any deserialization failure is treated as fatal.
+</Warning>
+
+---
+
+## Serialization: MessagePack
+
+All step payloads — inputs, outputs, and graph records — are serialized with **MessagePack** rather than JSON or pickle. Reasons:
+
+- **Performance** — binary format, significantly smaller than JSON for numeric/byte data
+- **Security** — no remote code execution deserialization vectors (unlike pickle)
+- **Cross-language** — same binary representation across Python, Go, Rust, TypeScript
+
+The Python SDK automatically serializes and deserializes all step payloads. You pass and receive normal Python dicts, lists, and primitives.
+
+---
+
+## gRPC Transport
+
+The engine exposes a single gRPC endpoint on port `50051` with TLS and authentication support:
+
+```bash
+# Inspect available services with reflection
+grpcurl -plaintext localhost:50051 list
+
+# cellaflow.v1.WorkflowEngineService
+# cellaflow.v1.IdempotencyService
+```
+
+The Python SDK connects over cleartext by default (`secure=False`). For production, point to your engine with TLS enabled and pass your API key:
+
+```python
+@workflow(version="1.0.0", target="engine.internal:50051", secure=True)
+def my_workflow(input: str) -> str:
+    ...
+```
+
+Set `CELLAFLOW_AUTH_TOKEN` in the engine's environment, and the SDK reads it automatically from your local environment.

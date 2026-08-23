@@ -1,0 +1,144 @@
+---
+title: "LangGraph Integration"
+description: "Use CellaflowSaver as a drop-in LangGraph checkpointer for durable, crash-recoverable agent graphs."
+icon: "git-branch"
+---
+
+# LangGraph Integration
+
+`CellaflowSaver` is a drop-in replacement for LangGraph's in-memory checkpointer. It persists your `StateGraph` checkpoints to the CellaFlow engine — giving your LangGraph workflows **crash recovery, time-travel debugging, and cross-agent state isolation** without changing your graph definition.
+
+---
+
+## Installation
+
+```bash
+pip install "cellaflow[langgraph]"
+```
+
+<Note>
+If your environment already has `langgraph >= 0.2.0` and `langgraph-checkpoint >= 2.0.0`, the `[langgraph]` extra is optional — `from cellaflow import CellaflowSaver` will work out of the box.
+</Note>
+
+---
+
+## Basic Usage
+
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+from cellaflow import CellaflowSaver
+
+# 1. Initialize the checkpointer
+checkpointer = CellaflowSaver(target="localhost:50051", secure=False)
+
+# 2. Define your state schema
+class AgentState(TypedDict):
+    query: str
+    plan: str
+    report: str
+
+# 3. Define nodes
+def planner(state: AgentState) -> dict:
+    return {"plan": f"Plan for: {state['query']}"}
+
+def reporter(state: AgentState) -> dict:
+    return {"report": f"Report based on: {state['plan']}"}
+
+# 4. Build the graph
+builder = StateGraph(AgentState)
+builder.add_node("planner", planner)
+builder.add_node("reporter", reporter)
+builder.add_edge(START, "planner")
+builder.add_edge("planner", "reporter")
+builder.add_edge("reporter", END)
+
+# 5. Compile with CellaFlow persistence
+app = builder.compile(checkpointer=checkpointer)
+
+# 6. Run with a thread_id (maps to a CellaFlow session)
+config = {"configurable": {"thread_id": "research-session-42"}}
+result = app.invoke({"query": "autonomous AI agents"}, config)
+print(result)
+```
+
+---
+
+## Crash Recovery
+
+If your process crashes mid-graph, re-invoke with the same `thread_id`. CellaFlow replays committed checkpoints and resumes from the last committed node:
+
+```python
+# Original run crashes after "planner" node
+result = app.invoke({"query": "autonomous AI agents"}, config)
+# → Crashes here
+
+# Resume — "planner" checkpoint is replayed, "reporter" runs live
+result = app.invoke({"query": "autonomous AI agents"}, config)
+```
+
+No changes to your graph definition required.
+
+---
+
+## Time-Travel & State Inspection
+
+`CellaflowSaver` implements the full LangGraph checkpoint interface, including `list()` and `get()` for time-travel:
+
+```python
+# List all checkpoints for a session
+for checkpoint_tuple in checkpointer.list(config):
+    print("Checkpoint ID:", checkpoint_tuple.checkpoint["id"])
+    print("State:", checkpoint_tuple.checkpoint["channel_values"])
+    print("---")
+
+# Get a specific checkpoint by ID
+checkpoint = checkpointer.get(config)
+print("Current state:", checkpoint["channel_values"])
+```
+
+Use this to inspect agent state at any point in the graph's execution history — useful for debugging long-running research or analysis workflows.
+
+---
+
+## Multi-Turn Conversations
+
+`thread_id` maps directly to a CellaFlow session. Use different `thread_id` values for different conversation threads:
+
+```python
+# Thread 1
+config_1 = {"configurable": {"thread_id": "user-alice-session-1"}}
+app.invoke({"query": "climate change"}, config_1)
+
+# Thread 2 — completely isolated state
+config_2 = {"configurable": {"thread_id": "user-bob-session-1"}}
+app.invoke({"query": "stock markets"}, config_2)
+
+# Continue Thread 1 — replays from last checkpoint
+app.invoke({"query": "climate change follow-up"}, config_1)
+```
+
+---
+
+## Checkpointer Configuration
+
+```python
+checkpointer = CellaflowSaver(
+    target="localhost:50051",   # Engine gRPC address
+    secure=False,               # Set True for TLS in production
+)
+```
+
+For production, set `CELLAFLOW_AUTH_TOKEN` in your engine environment, and the SDK reads the token automatically.
+
+---
+
+## How it maps to CellaFlow primitives
+
+| LangGraph concept | CellaFlow equivalent |
+|:---|:---|
+| `thread_id` | Session ID |
+| Checkpoint | Step commit in the event graph |
+| Node execution | `@step` — committed after completion |
+| Graph state | MessagePack-serialized payload in the event graph |
+| `list()` / `get()` | `GetSessionGraph` RPC |

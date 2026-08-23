@@ -1,0 +1,172 @@
+---
+title: "gRPC API Reference"
+description: "WorkflowEngineService and IdempotencyService RPC definitions, request/response schemas, and grpcurl examples."
+icon: "terminal"
+---
+
+# gRPC API Reference
+
+The CellaFlow engine exposes two gRPC services on port `50051`. The Python SDK handles all RPC calls automatically — this reference is for advanced use cases, custom SDK implementations, or direct engine interaction.
+
+---
+
+## Inspecting with gRPC Reflection
+
+The engine enables gRPC reflection by default. Use `grpcurl` to explore the API without proto files:
+
+```bash
+# List all services
+grpcurl -plaintext localhost:50051 list
+# cellaflow.v1.WorkflowEngineService
+
+# Describe a service
+grpcurl -plaintext localhost:50051 describe cellaflow.v1.WorkflowEngineService
+
+# Describe a specific RPC
+grpcurl -plaintext localhost:50051 describe cellaflow.v1.WorkflowEngineService.StartSession
+```
+
+---
+
+## WorkflowEngineService
+
+### `StartSession`
+
+Starts a new workflow execution session, or resumes an existing one.
+
+```bash
+grpcurl -plaintext \
+  -d '{"workflow_id": "research_workflow", "version": "1.0.0"}' \
+  localhost:50051 \
+  cellaflow.v1.WorkflowEngineService/StartSession
+```
+
+**Request:**
+
+| Field | Type | Required | Description |
+|:---|:---|:---|:---|
+| `workflow_id` | `string` | ✅ | Workflow definition identifier |
+| `version` | `string` | ✅ | Workflow version string |
+| `session_id` | `string` | ❌ | Optional client-proposed session ID. Engine performs transactional check-and-insert to prevent race conditions. |
+
+**Response:**
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `session_id` | `string` | The engine-assigned or client-proposed session ID |
+| `version` | `string` | The version pinned to this session |
+| `is_recovered` | `bool` | `true` if this session has an existing event graph |
+
+---
+
+### `CommitStep`
+
+Commits the result of a completed step to the session's event graph.
+
+The engine enforces **sequence ordering** — `step_result.sequence` must equal `current_sequence + 1`. Optimistic concurrency checks prevent race conditions.
+
+```bash
+grpcurl -plaintext \
+  -d '{
+    "session_id": "3f7491d9-e932-4467-bcda-370fb5c1a7e4",
+    "step_result": {
+      "sequence": 1,
+      "name": "search_web",
+      "status": "STEP_STATUS_SUCCESS",
+      "output_payload": "<msgpack bytes>"
+    }
+  }' \
+  localhost:50051 \
+  cellaflow.v1.WorkflowEngineService/CommitStep
+```
+
+**Request:**
+
+| Field | Type | Required | Description |
+|:---|:---|:---|:---|
+| `session_id` | `string` | ✅ | Target session |
+| `step_result` | `StepResult` | ✅ | Step result to append to the event graph |
+| `idempotency_key` | `string` | ❌ | Required for `@tool` commits — triggers idempotency cache write |
+| `idempotency_fencing_token` | `uint64` | ❌ | Required when `idempotency_key` is set — prevents stale lease commits |
+
+**Response:**
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `session_id` | `string` | The session ID |
+| `next_sequence` | `uint64` | Expected sequence number for the next commit |
+| `idempotency_status` | `IdempotencyCommitStatus` | `COMMITTED`, `ALREADY_COMMITTED`, or `STALE_LEASE_REJECTED` |
+
+---
+
+### `GetGraph`
+
+Retrieves the paginated event graph (step history) for a session.
+
+```bash
+grpcurl -plaintext \
+  -d '{"session_id": "3f7491d9-e932-4467-bcda-370fb5c1a7e4", "limit": 100}' \
+  localhost:50051 \
+  cellaflow.v1.WorkflowEngineService/GetGraph
+```
+
+**Request:**
+
+| Field | Type | Default | Description |
+|:---|:---|:---|:---|
+| `session_id` | `string` | — | Target session |
+| `limit` | `uint32` | `100` | Max steps per page. Engine enforces max of `1000`. |
+| `cursor` | `string` | — | Pagination cursor from previous response |
+
+**Response:**
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `session_id` | `string` | The session ID |
+| `steps` | `StepResult[]` | Ordered list of committed steps |
+| `next_cursor` | `string` | Pagination cursor. Empty if no more pages. |
+
+---
+
+### `CheckIdempotencyCache`
+
+Checks the idempotency cache for a given key. Used by `@tool` before executing a function.
+
+| Cache Response | Meaning |
+|:---|:---|
+| `CACHE_STATUS_HIT` | Result already committed — returns cached `StepResult` |
+| `CACHE_STATUS_ACQUIRED` | Miss, lease granted — caller should execute the function |
+| `CACHE_STATUS_IN_PROGRESS` | Another worker holds the lease — caller can wait or retry |
+
+---
+
+### `RenewLease` / `ReleaseLease`
+
+Background heartbeat and lease release RPCs. Managed automatically by `@tool` — you do not call these directly.
+
+- **`RenewLease`**: Extends the lease TTL. Must be called within `heartbeat_interval_ms` from `CheckCacheResponse`. If renewal fails with `RENEW_FAILURE_REASON_SUPERSEDED`, the caller has been fenced out and must abort.
+- **`ReleaseLease`**: Releases the lock, optionally with a reason (`"TOOL_ERROR"`, `"RATE_LIMITED_429"`, `"CANCELLED"`).
+
+---
+
+## Authenticated Calls
+
+Pass your API key via `x-api-key` or `Authorization: Bearer`:
+
+```bash
+grpcurl -plaintext \
+  -H "x-api-key: your-secret-key" \
+  -d '{"workflow_id": "test", "version": "1.0.0"}' \
+  localhost:50051 \
+  cellaflow.v1.WorkflowEngineService/StartSession
+```
+
+---
+
+## Proto Source
+
+Full Protocol Buffer definitions are in the [`cellaflow-sdks`](https://github.com/cellaflow/cellaflow-sdks) repository:
+
+- [`common.proto`](https://github.com/cellaflow/cellaflow-sdks/blob/main/proto/cellaflow/v1/common.proto) — `StepResult`, `StepStatus` enums
+- [`service.proto`](https://github.com/cellaflow/cellaflow-sdks/blob/main/proto/cellaflow/v1/service.proto) — `WorkflowEngineService` RPCs
+- [`idempotency.proto`](https://github.com/cellaflow/cellaflow-sdks/blob/main/proto/cellaflow/v1/idempotency.proto) — `IdempotencyScope`, `CacheStatus`, lease messages

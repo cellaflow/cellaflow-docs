@@ -1,0 +1,173 @@
+---
+title: "Decorators & API"
+description: "Complete reference for @workflow, @step, @tool, IdempotencyScope, and CellaflowClient."
+icon: "at-sign"
+---
+
+# Decorators & API Reference
+
+---
+
+## `@workflow`
+
+Marks the entry point of a durable workflow. Manages the gRPC session, loads the event graph on resume, and intercepts all nested `@step` / `@tool` calls.
+
+```python
+@workflow(
+    version: str = "1.0.0",
+    target: str = "localhost:50051",
+    secure: bool = False,
+)
+def my_workflow(input: str) -> str:
+    ...
+```
+
+| Parameter | Type | Default | Description |
+|:---|:---|:---|:---|
+| `version` | `str` | `"1.0.0"` | Workflow definition version. Sessions are pinned to the version they started on. |
+| `target` | `str` | `"localhost:50051"` | Engine gRPC address. |
+| `secure` | `bool` | `False` | Use TLS. Required for production deployments. |
+
+**Special keyword argument at call time:**
+
+```python
+# Pass _session_id to resume an existing session
+result = my_workflow(input_data, _session_id="3f7491d9-...")
+```
+
+**Context isolation:** Uses Python `contextvars` internally — safe across async event loops, threads, and concurrent sessions in the same process.
+
+---
+
+## `@step`
+
+Wraps an atomic unit of execution. Commits its output to the event graph after completion. On replay, returns the cached output without re-executing.
+
+```python
+@step(
+    agent_id: str = "default",
+    idempotency_key: Optional[str] = None,
+    tool_name: Optional[str] = None,
+    scope: IdempotencyScope = IdempotencyScope.SCOPE_SESSION_WIDE,
+)
+def my_step(input: dict) -> str:
+    ...
+```
+
+| Parameter | Type | Default | Description |
+|:---|:---|:---|:---|
+| `agent_id` | `str` | `"default"` | Agent identifier used in idempotency key derivation. |
+| `idempotency_key` | `str \| None` | `None` | Override the auto-computed key. Use when you need manual deduplication control. |
+| `tool_name` | `str \| None` | `None` | Override the step name in the event graph (defaults to function name). |
+| `scope` | `IdempotencyScope` | `SCOPE_SESSION_WIDE` | Controls how cached results are shared across agents. |
+
+`@step` is **lease-free** — it does not acquire a fencing token. Use `@tool` for external API calls and side-effecting operations where you need split-brain protection.
+
+---
+
+## `@tool`
+
+Like `@step`, but adds idempotency enforcement, fencing token acquisition, and background lease heartbeating. Use for any function that calls external APIs, writes to databases, or has side effects you must not duplicate.
+
+```python
+@tool(
+    agent_id: str = "default",
+    idempotency_key: Optional[str] = None,
+    tool_name: Optional[str] = None,
+    scope: IdempotencyScope = IdempotencyScope.SCOPE_SESSION_WIDE,
+)
+def call_external_api(query: str) -> dict:
+    ...
+```
+
+**What `@tool` does before executing your function:**
+
+1. Computes the canonical idempotency key:
+   ```
+   [session_id]:[version]:[sequence]:[agent_id]:[tool_name]:[RFC8785_SHA256(args)]
+   ```
+2. Calls `CheckIdempotency` on the engine
+3. **Cache HIT** → returns stored result, function body never runs
+4. **In-progress (LEASE)** → subscribes; receives result when the executing agent commits (singleflight)
+5. **Cache MISS** → acquires fencing token, starts background heartbeat, runs function, calls `CommitStep`
+
+**On exception:** automatically calls `ReleaseLease(reason="TOOL_ERROR")`.
+
+---
+
+## `IdempotencyScope`
+
+```python
+from cellaflow import IdempotencyScope
+
+IdempotencyScope.SCOPE_SESSION_WIDE   # Default: shared across all agents in the session
+IdempotencyScope.SCOPE_AGENT_PRIVATE  # Isolated to the specific agent_id
+IdempotencyScope.SCOPE_STEP_LOCAL     # Isolated to the current superstep sequence + agent_id
+```
+
+**When to use each:**
+
+| Scope | Use Case |
+|:---|:---|
+| `SCOPE_SESSION_WIDE` | Shared external data fetches (market data, search results) — singleflight applies |
+| `SCOPE_AGENT_PRIVATE` | Agent-specific state that must not bleed across personas |
+| `SCOPE_STEP_LOCAL` | Deterministic tools called multiple times in the same workflow with different arguments |
+
+---
+
+## `CellaflowClient`
+
+Low-level gRPC client for advanced use cases: manual session management, graph inspection, or custom scheduling logic.
+
+```python
+from cellaflow import CellaflowClient
+from cellaflow.v1.common_pb2 import STEP_STATUS_SUCCESS
+
+client = CellaflowClient(target="localhost:50051", secure=False)
+
+# Start or resume a session
+session = client.start_session(workflow_id="my_workflow", version="1.0.0")
+session_id = session.session_id
+
+# Inspect the event graph
+steps, next_cursor = client.get_graph(session_id=session_id)
+for step in steps:
+    print(f"seq:{step.sequence} {step.name} → {step.status}")
+
+# Commit a step manually
+client.commit_step(
+    session_id=session_id,
+    sequence=1,
+    name="custom_task",
+    status=STEP_STATUS_SUCCESS,
+    output_payload={"result": "value"}
+)
+
+# Always close the channel
+client.close()
+```
+
+---
+
+## Idempotency Key Schema
+
+The canonical key format used by `@tool` (and optionally `@step`):
+
+```
+{session_id}:{workflow_version}:{step_sequence}:{agent_id}:{tool_name}:{input_hash}
+```
+
+Where `{input_hash}` is computed as:
+
+```python
+import hashlib, json
+
+# Serialize args with RFC 8785 Canonical JSON (sorted keys, deterministic)
+canonical = json.dumps(args, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+hash = hashlib.sha256(canonical.encode()).hexdigest()
+```
+
+This guarantees the same key across:
+- Different Python versions
+- Different SDK language implementations (future TypeScript SDK)
+- Different machines and timezones

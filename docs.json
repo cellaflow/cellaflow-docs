@@ -1,0 +1,80 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "CellaFlow",
+  "colors": {
+    "primary": "#00D2FF",
+    "light": "#0CE39A",
+    "dark": "#00A8CC"
+  },
+  "logo": {
+    "light": "/logos/logo-light-wordmark.svg",
+    "dark": "/logos/logo-dark-wordmark.svg",
+    "href": "https://cellaflow.com"
+  },
+  "favicon": "/logos/logo.svg",
+  "appearance": {
+    "default": "dark"
+  },
+  "fonts": {
+    "family": "Outfit"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "background": {
+    "decoration": "gradient"
+  },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/cellaflow/cellaflow-sdks"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Request Alpha Access",
+      "href": "https://cellaflow.com"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/cellaflow/cellaflow-sdks",
+      "x": "https://x.com/cellaflow",
+      "linkedin": "https://www.linkedin.com/company/cellaflow"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "icon": "rocket",
+        "pages": [
+          "index",
+          "quickstart",
+          "concepts",
+          "architecture"
+        ]
+      },
+      {
+        "group": "Python SDK",
+        "icon": "code",
+        "pages": [
+          "sdks/python/overview",
+          "sdks/python/decorators",
+          "sdks/python/langgraph"
+        ]
+      },
+      {
+        "group": "Reference",
+        "icon": "book-open",
+        "pages": [
+          "self-hosting",
+          "api-reference",
+          "changelog"
+        ]
+      }
+    ]
+  }
+}

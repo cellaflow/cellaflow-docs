@@ -1,0 +1,182 @@
+---
+title: "Self-Hosting"
+description: "Run the CellaFlow engine with Docker, configure TLS and authentication, and deploy to production."
+icon: "server"
+---
+
+# Self-Hosting
+
+The CellaFlow engine is distributed as a Docker image. This page covers running it locally for development and deploying it in production with TLS and authentication.
+
+---
+
+## Docker (Local Development)
+
+The fastest way to get started:
+
+```bash
+docker run -d \
+  --name cellaflow \
+  -p 50051:50051 \
+  -p 8080:8080 \
+  ghcr.io/cellaflow/cellaflow:latest
+```
+
+| Port | Purpose |
+|:---|:---|
+| `50051` | gRPC API (SDK connections) |
+| `8080` | Health check HTTP server |
+
+Check health:
+
+```bash
+curl http://localhost:8080/health/ready
+# {"status":"ready"}
+```
+
+---
+
+## Persistent Storage
+
+By default, RocksDB data is written inside the container and lost on restart. For persistent state, mount a volume:
+
+```bash
+docker run -d \
+  --name cellaflow \
+  -p 50051:50051 \
+  -p 8080:8080 \
+  -v $(pwd)/cellaflow-data:/data \
+  ghcr.io/cellaflow/cellaflow:latest
+```
+
+---
+
+## Docker Compose
+
+For local multi-service setups, use Docker Compose:
+
+```yaml
+# docker-compose.yml
+services:
+  cellaflow:
+    image: ghcr.io/cellaflow/cellaflow:latest
+    ports:
+      - "50051:50051"
+      - "8080:8080"
+    volumes:
+      - ./cellaflow-data:/data
+    environment:
+      - CELLAFLOW_AUTH_TOKEN=your-secret-key
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
+
+```bash
+docker compose up -d
+```
+
+---
+
+## Authentication
+
+Set a Bearer token to require authentication on all gRPC calls:
+
+```bash
+docker run -d \
+  --name cellaflow \
+  -p 50051:50051 \
+  -e CELLAFLOW_AUTH_TOKEN=your-secret-key \
+  ghcr.io/cellaflow/cellaflow:latest
+```
+
+The Python SDK reads `CELLAFLOW_AUTH_TOKEN` from your local environment automatically, or you can pass it explicitly:
+
+```python
+# Set in environment
+export CELLAFLOW_AUTH_TOKEN=your-secret-key
+
+# Or pass to workflow (advanced)
+@workflow(version="1.0.0", target="engine:50051", secure=True)
+def my_workflow(input: str) -> str: ...
+```
+
+The engine accepts tokens via both `Authorization: Bearer <token>` and `x-api-key: <token>` headers.
+
+---
+
+## TLS
+
+Provide a certificate and private key for TLS:
+
+```bash
+docker run -d \
+  --name cellaflow \
+  -p 50051:50051 \
+  -e CELLAFLOW_TLS_CERT=/certs/cert.pem \
+  -e CELLAFLOW_TLS_KEY=/certs/key.pem \
+  -v $(pwd)/certs:/certs \
+  ghcr.io/cellaflow/cellaflow:latest
+```
+
+Connect from the SDK with `secure=True`:
+
+```python
+@workflow(version="1.0.0", target="engine.internal:50051", secure=True)
+def my_workflow(input: str) -> str: ...
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Default |
+|:---|:---|:---|
+| `CELLAFLOW_AUTH_TOKEN` | API key for Bearer / `x-api-key` authentication | None (auth disabled) |
+| `CELLAFLOW_TLS_CERT` | Path to TLS certificate file (PEM) | None (cleartext) |
+| `CELLAFLOW_TLS_KEY` | Path to TLS private key file (PEM) | None (cleartext) |
+| `CELLAFLOW_BIND_ADDR` | gRPC server bind address | `0.0.0.0:50051` |
+| `CELLAFLOW_DATA_DIR` | RocksDB data directory | `/data` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP telemetry endpoint | `localhost:4317` |
+
+---
+
+## Health Checks
+
+The engine exposes an HTTP health server on port `8080`:
+
+| Endpoint | Status | Meaning |
+|:---|:---|:---|
+| `GET /health/ready` | `503` | Engine is booting (boot recovery in progress) |
+| `GET /health/ready` | `200 {"status":"ready"}` | Engine is fully initialized and accepting gRPC connections |
+
+<Warning>
+Do not route gRPC traffic to the engine until `/health/ready` returns 200. The engine performs boot recovery (session reconstruction + timer respawning) before accepting connections — attempting to connect during recovery will fail.
+</Warning>
+
+---
+
+## Observability
+
+CellaFlow emits OpenTelemetry traces and metrics to an OTLP collector. In local development, you can use the OpenTelemetry Collector or Jaeger:
+
+```bash
+# Run Jaeger locally
+docker run -d \
+  --name jaeger \
+  -p 4317:4317 \
+  -p 16686:16686 \
+  jaegertracing/all-in-one:latest
+
+# Then run the engine pointing to it
+docker run -d \
+  --name cellaflow \
+  -p 50051:50051 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317 \
+  ghcr.io/cellaflow/cellaflow:latest
+```
+
+Open Jaeger UI at `http://localhost:16686` to inspect traces.
