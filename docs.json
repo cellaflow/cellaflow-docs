@@ -3,9 +3,9 @@
   "theme": "mint",
   "name": "CellaFlow",
   "colors": {
-    "primary": "#00D2FF",
-    "light": "#0CE39A",
-    "dark": "#00A8CC"
+    "primary": "#3b82f6",
+    "light": "#60a5fa",
+    "dark": "#3b82f6"
   },
   "logo": {
     "light": "/logos/logo-light-wordmark.svg",
@@ -23,7 +23,10 @@
     "library": "lucide"
   },
   "background": {
-    "decoration": "gradient"
+    "color": {
+      "dark": "#090d16"
+    },
+    "decoration": "none"
   },
   "navbar": {
     "links": [
