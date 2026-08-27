@@ -10,7 +10,7 @@ icon: "zap"
 CellaFlow is a systems-grade Rust execution ledger that makes AI agent workflows **durable, idempotent, and crash-proof** — at roughly **2ms per committed step**.
 
 <Note>
-Measured single-writer against `ghcr.io/cellaflow/cellaflow:latest` on a 2018 Intel MacBook Pro: `CommitStep` p50 **1.6ms**, p99 **2.8ms**. Almost all of that is the gRPC round trip — the durable write itself does not register above the noise floor. Latency rises steeply when many writers contend on a *single* session; see [Latency](/architecture#latency) for the numbers and the conditions behind them.
+Measured single-writer against `ghcr.io/cellaflow/cellaflow:latest` on a 2018 Intel MacBook Pro: `CommitStep` p50 **1.6ms**, p99 **2.8ms**. Almost all of that is the gRPC round trip — the durable write itself does not register above the noise floor.
 </Note>
 
 Add three decorators to your Python code. That's it.
