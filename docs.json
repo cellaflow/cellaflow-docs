@@ -52,8 +52,9 @@
       {
         "group": "Get Started",
         "icon": "rocket",
+        "root": "index",
+        "expanded": true,
         "pages": [
-          "index",
           "quickstart",
           "concepts",
           "architecture"
@@ -62,8 +63,9 @@
       {
         "group": "Python SDK",
         "icon": "code",
+        "root": "sdks/python/overview",
+        "expanded": true,
         "pages": [
-          "sdks/python/overview",
           "sdks/python/decorators",
           "sdks/python/langgraph"
         ]
@@ -71,8 +73,9 @@
       {
         "group": "Reference",
         "icon": "book-open",
+        "root": "self-hosting",
+        "expanded": true,
         "pages": [
-          "self-hosting",
           "api-reference",
           "changelog"
         ]
