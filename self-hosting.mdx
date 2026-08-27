@@ -18,19 +18,19 @@ The fastest way to get started:
 docker run -d \
   --name cellaflow \
   -p 50051:50051 \
-  -p 8080:8080 \
+  -p 9090:9090 \
   ghcr.io/cellaflow/cellaflow:latest
 ```
 
 | Port | Purpose |
 |:---|:---|
 | `50051` | gRPC API (SDK connections) |
-| `8080` | Health check HTTP server |
+| `9090` | Health check HTTP server |
 
 Check health:
 
 ```bash
-curl http://localhost:8080/health/ready
+curl http://localhost:9090/health/ready
 # {"status":"ready"}
 ```
 
@@ -44,7 +44,7 @@ By default, RocksDB data is written inside the container and lost on restart. Fo
 docker run -d \
   --name cellaflow \
   -p 50051:50051 \
-  -p 8080:8080 \
+  -p 9090:9090 \
   -v $(pwd)/cellaflow-data:/data \
   ghcr.io/cellaflow/cellaflow:latest
 ```
@@ -62,14 +62,14 @@ services:
     image: ghcr.io/cellaflow/cellaflow:latest
     ports:
       - "50051:50051"
-      - "8080:8080"
+      - "9090:9090"
     volumes:
       - ./cellaflow-data:/data
     environment:
       - CELLAFLOW_AUTH_TOKEN=your-secret-key
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -133,20 +133,53 @@ def my_workflow(input: str) -> str: ...
 
 ## Environment Variables
 
+Two of these have a **different default in the container image than in the binary**, because the
+image sets them itself. The distinction matters when running the binary directly.
+
+| Variable | Description | Binary default | Image default |
+|:---|:---|:---|:---|
+| `CELLAFLOW_HOST` | gRPC bind address | `[::1]` — loopback only | `::` |
+| `CELLAFLOW_PORT` | gRPC port | `50051` | `50051` |
+| `CELLAFLOW_DB_PATH` | RocksDB data directory | `./cellaflow_data` | `/data/cellaflow` |
+
 | Variable | Description | Default |
 |:---|:---|:---|
 | `CELLAFLOW_AUTH_TOKEN` | API key for Bearer / `x-api-key` authentication | None (auth disabled) |
 | `CELLAFLOW_TLS_CERT` | Path to TLS certificate file (PEM) | None (cleartext) |
 | `CELLAFLOW_TLS_KEY` | Path to TLS private key file (PEM) | None (cleartext) |
-| `CELLAFLOW_BIND_ADDR` | gRPC server bind address | `0.0.0.0:50051` |
-| `CELLAFLOW_DATA_DIR` | RocksDB data directory | `/data` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP telemetry endpoint | `localhost:4317` |
+| `CELLAFLOW_MANAGEMENT_PORT` | HTTP health server port | `9090` |
+| `CELLAFLOW_OTLP_ENDPOINT` | OTLP telemetry endpoint | `http://localhost:4317` |
+| `CELLAFLOW_LOG_LEVEL` | Log level | `info` |
+| `CELLAFLOW_BACKEND` | Storage backend | `rocksdb` — the others are not implemented |
+| `CELLAFLOW_SESSION_IDLE_TIMEOUT_SECS` | Idle seconds before a session evicts from memory | `1800` |
+| `CELLAFLOW_ACTOR_SEND_TIMEOUT_MS` | Wait for room on a session's mailbox before shedding with `RESOURCE_EXHAUSTED` | `5000` |
+| `CELLAFLOW_MAX_LEASE_LIFETIME_MS` | Ceiling on a single lease, independent of heartbeats | `3600000` (1 hour) |
+
+Most variables also accept an unprefixed fallback (`HOST`, `PORT`, `DB_PATH`, `AUTH_TOKEN`,
+`API_KEY`).
+
+<Warning>
+**Running the binary directly? `CELLAFLOW_HOST` defaults to `[::1]` — loopback only.** The engine
+will start, report healthy, and refuse connections from anywhere else, with no error to explain
+it. Set `CELLAFLOW_HOST=::` (or `0.0.0.0`) to accept external traffic. The Docker examples on this
+page do not pass it because the image already sets it; if you extract a command from one of them
+to run a locally built binary, you have to add it.
+</Warning>
+
+<Warning>
+**`CELLAFLOW_MAX_LEASE_LIFETIME_MS` is safe to raise and unsafe to lower.** It exists because a
+worker that hangs *without dying* heartbeats forever and would otherwise hold its lease — and its
+graph position — indefinitely. But reclaiming a worker that is merely slow lets a second worker
+repeat a side effect the first may already have performed. Set it above your slowest legitimate
+tool call, not near it.
+</Warning>
 
 ---
 
 ## Health Checks
 
-The engine exposes an HTTP health server on port `8080`:
+The engine exposes an HTTP health server on the management port (`CELLAFLOW_MANAGEMENT_PORT`,
+default `9090`):
 
 | Endpoint | Status | Meaning |
 |:---|:---|:---|
@@ -175,7 +208,7 @@ docker run -d \
 docker run -d \
   --name cellaflow \
   -p 50051:50051 \
-  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317 \
+  -e CELLAFLOW_OTLP_ENDPOINT=http://jaeger:4317 \
   ghcr.io/cellaflow/cellaflow:latest
 ```
 

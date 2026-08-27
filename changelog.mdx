@@ -10,13 +10,37 @@ icon: "history"
 
 ## Python SDK
 
-### v0.2.0 — Latest
+### v0.3.0 — Latest
+
+- ✅ `IdempotencyScope.SCOPE_SHARED` — agents in **different sessions**, on different workflows and
+  versions, converge on one execution within a named coordination domain
+- ⚠️ **Replayed steps are now verified.** A resumed run that diverged from its history raises
+  `NondeterministicWorkflowError` instead of silently returning another step's result
+- ⚠️ **Divergent replicas are refused before executing.** Replicas that disagree about a step's
+  arguments raise `DivergentStepError` *before* the side effect, rather than all executing and
+  losing at commit
+- ✅ A cache hit no longer desynchronises the caller's sequence counter
+- ✅ Concurrent `CellaflowSaver` instances on one `thread_id` no longer collide
+- ✅ Lease renewal failures explain what happened and what to do about it
+
+The two ⚠️ items convert silent wrong answers into exceptions, so code that appeared to work may
+now raise. Requires no engine upgrade — the new request fields are optional and an older engine
+ignores them.
+
+<Warning>
+**Known issue.** `CellaflowSaver` loses updates under concurrent read-modify-write: N agents each
+reading a value, incrementing it and writing it back end at 2 rather than N, with **zero errors**
+— every write succeeds and is correctly ordered. The checkpointer does not use the lease layer
+that provides the guarantee. The decorator path is unaffected: use a leased `@tool` for state
+several agents update concurrently.
+</Warning>
+
+### v0.2.0
 
 - ✅ `@workflow`, `@step`, `@tool` decorators with full `async def` support
 - ✅ `CellaflowSaver` — drop-in LangGraph checkpointer with time-travel and crash recovery
 - ✅ RFC 8785 Canonical JSON + SHA-256 idempotency key derivation
 - ✅ Agent-scoped idempotency (`SCOPE_SESSION_WIDE`, `SCOPE_AGENT_PRIVATE`, `SCOPE_STEP_LOCAL`)
-- ✅ Cross-session idempotency (`SCOPE_SHARED`) — heterogeneous agents in separate sessions share one execution within a named coordination domain
 - ✅ Background lease heartbeat management with fencing token validation
 - ✅ MessagePack serialization for all state payloads (no pickle, no RCE vectors)
 - ✅ `contextvars` isolation — safe for concurrent async workflows in the same process
@@ -34,6 +58,10 @@ Install: [`pip install cellaflow`](https://pypi.org/project/cellaflow/)
 - ✅ `IdempotencyService` — `CheckIdempotencyCache`, `RenewLease`, `ReleaseLease`
 - ✅ RocksDB-backed append-only event graph
 - ✅ Sequence ordering guard — optimistic concurrency for step commits
+- ✅ Graph-position arbitration — a lease is refused before execution when the position is already
+  committed, or claimed by a different step identity
+- ✅ Maximum lease lifetime (`CELLAFLOW_MAX_LEASE_LIFETIME_MS`) — a worker that hangs while still
+  heartbeating is eventually reclaimed, with fencing tokens making the reclaim safe
 - ✅ Boot recovery — session reconstruction and timer respawning on startup
 - ✅ TLS support (cert + key via environment variables)
 - ✅ Bearer token and `x-api-key` authentication interceptor
