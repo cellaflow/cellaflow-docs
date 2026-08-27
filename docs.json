@@ -12,7 +12,7 @@
     "dark": "/logos/logo-dark-wordmark.svg",
     "href": "https://cellaflow.com"
   },
-  "favicon": "/logos/logo.svg",
+  "favicon": "/logos/logo-white-bg.svg",
   "appearance": {
     "default": "dark"
   },

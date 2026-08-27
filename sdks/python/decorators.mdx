@@ -28,12 +28,18 @@ def my_workflow(input: str) -> str:
 | `target` | `str` | `"localhost:50051"` | Engine gRPC address. |
 | `secure` | `bool` | `False` | Use TLS. Required for production deployments. |
 
-**Special keyword argument at call time:**
+**Special keyword arguments at call time:**
 
 ```python
-# Pass _session_id to resume an existing session
+# Resume an existing session
 result = my_workflow(input_data, _session_id="3f7491d9-...")
+
+# Name the coordination domain for any SCOPE_SHARED step in this workflow
+result = my_workflow(input_data, _coordination_id="release-4.2")
 ```
+
+Both are popped before your function is called, so they never appear in its signature.
+`_coordination_id` is required by `SCOPE_SHARED` and ignored by every other scope.
 
 **Context isolation:** Uses Python `contextvars` internally — safe across async event loops, threads, and concurrent sessions in the same process.
 
@@ -86,6 +92,11 @@ def call_external_api(query: str) -> dict:
    ```
    [session_id]:[version]:[sequence]:[agent_id]:[tool_name]:[RFC8785_SHA256(args)]
    ```
+   Under `SCOPE_SHARED` the session and version are dropped, so agents in different sessions
+   converge on one key:
+   ```
+   shared:[coordination_id]:[tool_name]:[RFC8785_SHA256(args)]
+   ```
 2. Calls `CheckIdempotency` on the engine
 3. **Cache HIT** → returns stored result, function body never runs
 4. **In-progress (LEASE)** → subscribes; receives result when the executing agent commits (singleflight)
@@ -103,7 +114,12 @@ from cellaflow import IdempotencyScope
 IdempotencyScope.SCOPE_SESSION_WIDE   # Default: shared across all agents in the session
 IdempotencyScope.SCOPE_AGENT_PRIVATE  # Isolated to the specific agent_id
 IdempotencyScope.SCOPE_STEP_LOCAL     # Isolated to the current superstep sequence + agent_id
+IdempotencyScope.SCOPE_SHARED         # Shared across sessions within a coordination domain
 ```
+
+The first three **narrow** the key from the session-wide default. `SCOPE_SHARED` is the only one
+that **widens past the session**, which is why it is the only one that requires you to declare a
+domain explicitly.
 
 **When to use each:**
 
@@ -112,6 +128,67 @@ IdempotencyScope.SCOPE_STEP_LOCAL     # Isolated to the current superstep sequen
 | `SCOPE_SESSION_WIDE` | Shared external data fetches (market data, search results) — singleflight applies |
 | `SCOPE_AGENT_PRIVATE` | Agent-specific state that must not bleed across personas |
 | `SCOPE_STEP_LOCAL` | Deterministic tools called multiple times in the same workflow with different arguments |
+| `SCOPE_SHARED` | One side effect that heterogeneous agents in *separate* sessions must perform exactly once — a publish, a payment, a provisioning call |
+
+---
+
+## Cross-session coordination with SCOPE_SHARED
+
+Every other scope deduplicates within one session. `SCOPE_SHARED` deduplicates across them: a
+coder, a researcher, and a doc writer, each running its own workflow in its own session, converge
+on a single execution.
+
+```python
+from cellaflow import workflow, tool, IdempotencyScope
+
+@tool(tool_name="publish_release_notes", scope=IdempotencyScope.SCOPE_SHARED)
+def publish(version: str) -> dict:
+    return notes_service.publish(version)      # runs exactly once
+
+@workflow(version="1.0.0")
+def coder_agent(version: str) -> dict:
+    return publish(version)
+
+@workflow(version="2.3.0")                     # different workflow, different version
+def doc_writer_agent(version: str) -> dict:
+    return publish(version)
+
+coder_agent("v4.2", _coordination_id="release-4.2")
+doc_writer_agent("v4.2", _coordination_id="release-4.2")
+```
+
+The first call executes and commits. The second finds the completed record and receives its result
+without running the function body.
+
+### The coordination domain is required
+
+`_coordination_id` names **the work being shared** — a release, a ticket, a task, a tenant. It is
+passed at the call site rather than declared on the decorator because it is a property of the
+collaboration, not of the tool.
+
+<Warning>
+There is no default, and `SCOPE_SHARED` without a `_coordination_id` raises `ValueError`. A default
+would make two unrelated callers of `send_email(to=alice)` deduplicate against each other — one
+agent's send is suppressed and it is handed a result it never asked for, with no error anywhere.
+</Warning>
+
+### What must match for two agents to converge
+
+Any one of these differing means both agents execute:
+
+| Must match | Note |
+|:---|:---|
+| `coordination_id` | Separate domains stay isolated. This is what keeps the scope from being too wide. |
+| `tool_name` | Defaults to the **function name**. Agents whose functions are named differently must set `tool_name=` to the same explicit value. |
+| Arguments | Hashed with RFC 8785 + SHA-256. `publish("v4.2")` and `publish("V4.2")` are different operations. |
+
+### Versioning caveat
+
+The derived key drops `workflow_version` deliberately — heterogeneous agents will not be on the
+same version, and requiring it would defeat the purpose. The consequence is that changing a shared
+tool's behaviour, without changing its name or its arguments, does **not** produce a new key: an
+agent running the new version can receive a result produced by the old one. Encode the change in
+`tool_name` or in the arguments when that matters.
 
 ---
 

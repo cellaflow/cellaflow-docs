@@ -142,3 +142,67 @@ def my_workflow(input: str) -> str:
 ```
 
 Set `CELLAFLOW_AUTH_TOKEN` in the engine's environment, and the SDK reads it automatically from your local environment.
+
+---
+
+## Latency
+
+Every number below was measured against `ghcr.io/cellaflow/cellaflow:latest`, driven by the Python
+SDK's `CellaflowClient` over loopback gRPC, with a **single sequential writer** and a 136-byte
+MessagePack payload. The host was a 2018 Intel Core i7-8850H MacBook Pro running Docker Desktop —
+deliberately not fast hardware, so treat these as a floor rather than a best case. 400 samples per
+figure after 50 warm-up calls.
+
+| Operation | p50 | p95 | p99 |
+|:---|---:|---:|---:|
+| `CommitStep` — durable step commit | 1.6 ms | 2.3 ms | 2.8 ms |
+| `GetGraph` — read a 3-step session | 1.6 ms | 2.3 ms | 3.1 ms |
+| `CheckIdempotencyCache` — cache hit | 1.6 ms | 2.2 ms | 2.5 ms |
+| MessagePack encode (in-process) | 2.0 µs | — | 5.2 µs |
+
+### The write is not the cost
+
+The three RPCs land within noise of each other, and `CommitStep` minus `GetGraph` — a durable write
+minus a read that performs no write — came out at **0.02 ms** across two runs. Serialization is
+three orders of magnitude below the RPC itself.
+
+What you are paying for a durable step is therefore **one gRPC round trip**, not storage work. The
+practical consequence: co-locating the engine with your agent (same host, or a sidecar) matters far
+more for latency than anything about the storage layer, and moving it across a network boundary will
+dominate every figure in the table above.
+
+### These are single-writer numbers
+
+Contention changes the picture completely. Workers committing to *one* session serialize behind that
+session's actor, and because sequence ordering is enforced (`sequence == current + 1`), a writer that
+loses the race refreshes its position and retries. Same host and payload as above, each writer
+committing one step, released simultaneously:
+
+| Writers on one session | p50 | p99 | Wall clock | Median attempts per writer |
+|---:|---:|---:|---:|---:|
+| 1 | 7 ms | 7 ms | 0.01 s | 1 |
+| 5 | 20 ms | 34 ms | 0.04 s | 3 |
+| 25 | 95 ms | 153 ms | 0.16 s | 7 |
+| 50 | 278 ms | 459 ms | 0.47 s | 9 |
+| 100 | 771 ms | 1298 ms | 1.35 s | 11 |
+
+Every writer landed at every level — the cost of contention is retry amplification, not failure. But
+per-writer latency grows super-linearly, so **a single session is not a throughput unit**. Independent
+sessions do not contend with one another; if you need many concurrent writers, give them their own
+sessions rather than sharing one.
+
+<Note>
+This measures **appends** — each writer adds a new step. It says nothing about read-modify-write
+correctness: if several agents read shared state, change it, and write it back, ordering their writes
+is not the same as preventing them from overwriting one another. Use `@tool` with an idempotency
+lease for operations that must happen exactly once.
+</Note>
+
+<Warning>
+**On the word "durable".** Committed steps are written to RocksDB's write-ahead log, which is what
+lets a session survive a process crash, a container restart, or a pod eviction — the cases CellaFlow
+is built for. Writes are **not** fsynced per commit (RocksDB's default write options), so a sudden
+power loss or a hard kernel failure can lose commits that the engine has already acknowledged. If
+your failure model includes that, do not rely on these numbers: per-commit fsync is not currently
+configurable, and enabling it would change the latency profile substantially.
+</Warning>

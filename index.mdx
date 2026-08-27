@@ -7,7 +7,11 @@ icon: "zap"
 
 # The Execution Ledger for Multi-Agent AI
 
-CellaFlow is a systems-grade Rust execution ledger that makes AI agent workflows **durable, idempotent, and crash-proof** — with sub-5ms overhead.
+CellaFlow is a systems-grade Rust execution ledger that makes AI agent workflows **durable, idempotent, and crash-proof** — at roughly **2ms per committed step**.
+
+<Note>
+Measured single-writer against `ghcr.io/cellaflow/cellaflow:latest` on a 2018 Intel MacBook Pro: `CommitStep` p50 **1.6ms**, p99 **2.8ms**. Almost all of that is the gRPC round trip — the durable write itself does not register above the noise floor.
+</Note>
 
 Add three decorators to your Python code. That's it.
 
@@ -49,7 +53,7 @@ result = research_agent("autonomous AI architectures")
     50 agents requesting the same tool call = 1 execution. In-memory broadcast eliminates redundant API spend.
   </Card>
   <Card title="Agent-Scoped Idempotency" icon="fingerprint">
-    RFC 8785 canonical JSON hashing guarantees deterministic deduplication across agents, languages, and restarts.
+    RFC 8785 canonical JSON hashing guarantees deterministic deduplication across agents, languages, sessions, and restarts.
   </Card>
   <Card title="Non-Persistable Zones" icon="shield-off">
     Suspend checkpointing during live LLM streaming without corrupting your durable state.

@@ -85,7 +85,39 @@ Controls how results are shared across agents:
 
 # Only cached within the current superstep sequence
 @tool(scope=IdempotencyScope.SCOPE_STEP_LOCAL)
+
+# Shared across *different sessions* in a named coordination domain
+@tool(scope=IdempotencyScope.SCOPE_SHARED)
 ```
+
+### Coordinating across sessions
+
+The first three scopes all narrow the key from the session-wide default, so every agent that shares
+a result has to be in the same session. That covers replicas of one agent, but not a **swarm of
+different agents** — a coder, a researcher, and a doc writer, each running its own workflow, each
+with its own session, all reaching for the same external operation.
+
+`SCOPE_SHARED` is the scope for that case. It is the only one whose key omits `session_id`, and it
+omits `workflow_version` too, because heterogeneous agents will not be running the same workflow at
+the same version:
+
+```
+shared:[coordination_id]:[tool_name]:[RFC8785_SHA256(args)]
+```
+
+What replaces the session is a **coordination domain** you name at the call site — the release, the
+ticket, the tenant that the agents are collaborating on:
+
+```python
+coder_agent("v4.2", _coordination_id="release-4.2")
+doc_writer_agent("v4.2", _coordination_id="release-4.2")   # one publish between them
+```
+
+The domain is required and has no default. Without one, two unrelated callers making the same call
+would deduplicate against each other, and the suppressed caller would receive a result it never
+asked for with no error raised. Making it explicit forces the boundary to be a decision rather than
+an accident. See [`SCOPE_SHARED`](/sdks/python/decorators#cross-session-coordination-with-scope_shared)
+for the full rules.
 
 ---
 

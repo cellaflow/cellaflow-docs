@@ -16,6 +16,7 @@ icon: "history"
 - ✅ `CellaflowSaver` — drop-in LangGraph checkpointer with time-travel and crash recovery
 - ✅ RFC 8785 Canonical JSON + SHA-256 idempotency key derivation
 - ✅ Agent-scoped idempotency (`SCOPE_SESSION_WIDE`, `SCOPE_AGENT_PRIVATE`, `SCOPE_STEP_LOCAL`)
+- ✅ Cross-session idempotency (`SCOPE_SHARED`) — heterogeneous agents in separate sessions share one execution within a named coordination domain
 - ✅ Background lease heartbeat management with fencing token validation
 - ✅ MessagePack serialization for all state payloads (no pickle, no RCE vectors)
 - ✅ `contextvars` isolation — safe for concurrent async workflows in the same process
