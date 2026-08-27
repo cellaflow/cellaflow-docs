@@ -195,8 +195,7 @@ agent running the new version can receive a result produced by the old one. Enco
 ## Errors you may see
 
 Two exceptions the SDK raises that are worth recognising, because they have opposite causes and
-are easy to confuse. Both were introduced in 0.3.0 and both convert a previously **silent wrong
-answer** into a loud one.
+are easy to confuse.
 
 ### `NondeterministicWorkflowError` — a resumed run diverged from its history
 
@@ -232,8 +231,6 @@ refuses the second replica **before its function body runs**:
 DivergentStepError: Step 'issue_refund' at sequence 1 was refused: Sequence 1 in
 session 'refund-4417' is already claimed by a different step identity ...
 ```
-
-Previously both replicas executed and the loser was rejected at commit — after the side effect.
 
 **The fix belongs in the workflow, not at the call site.** Catching this is too late; the
 disagreement already happened. Wrap the value the replicas disagree about in its own leased step
