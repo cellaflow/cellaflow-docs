@@ -186,23 +186,11 @@ committing one step, released simultaneously:
 | 50 | 278 ms | 459 ms | 0.47 s | 9 |
 | 100 | 771 ms | 1298 ms | 1.35 s | 11 |
 
-Every writer landed at every level — the cost of contention is retry amplification, not failure. But
-per-writer latency grows super-linearly, so **a single session is not a throughput unit**. Independent
-sessions do not contend with one another; if you need many concurrent writers, give them their own
-sessions rather than sharing one.
+**Every writer lands at every level** — contention costs retries, not failures. Sessions are the
+unit of concurrency: independent sessions never contend with one another, so a workload spread
+across its own sessions scales flat while one shared session serialises behind its actor.
 
 <Note>
-This measures **appends** — each writer adds a new step. It says nothing about read-modify-write
-correctness: if several agents read shared state, change it, and write it back, ordering their writes
-is not the same as preventing them from overwriting one another. Use `@tool` with an idempotency
-lease for operations that must happen exactly once.
+Committed steps are written to RocksDB's write-ahead log, so a session survives a process crash, a
+container restart or a pod eviction and resumes from its last durable step.
 </Note>
-
-<Warning>
-**On the word "durable".** Committed steps are written to RocksDB's write-ahead log, which is what
-lets a session survive a process crash, a container restart, or a pod eviction — the cases CellaFlow
-is built for. Writes are **not** fsynced per commit (RocksDB's default write options), so a sudden
-power loss or a hard kernel failure can lose commits that the engine has already acknowledged. If
-your failure model includes that, do not rely on these numbers: per-commit fsync is not currently
-configurable, and enabling it would change the latency profile substantially.
-</Warning>

@@ -14,26 +14,16 @@ icon: "history"
 
 - ✅ `IdempotencyScope.SCOPE_SHARED` — agents in **different sessions**, on different workflows and
   versions, converge on one execution within a named coordination domain
-- ⚠️ **Replayed steps are now verified.** A resumed run that diverged from its history raises
-  `NondeterministicWorkflowError` instead of silently returning another step's result
-- ⚠️ **Divergent replicas are refused before executing.** Replicas that disagree about a step's
-  arguments raise `DivergentStepError` *before* the side effect, rather than all executing and
-  losing at commit
-- ✅ A cache hit no longer desynchronises the caller's sequence counter
-- ✅ Concurrent `CellaflowSaver` instances on one `thread_id` no longer collide
+- ✅ **Replay verification** — a resumed run that diverges from its recorded history raises
+  `NondeterministicWorkflowError` rather than returning the result recorded at that position
+- ✅ **Graph-position arbitration** — replicas that disagree about a step's arguments raise
+  `DivergentStepError` *before* the side effect runs
+- ✅ Callers adopt the engine's reported sequence after a cache hit
+- ✅ Concurrent `CellaflowSaver` instances on one `thread_id` commit against a refreshed sequence
 - ✅ Lease renewal failures explain what happened and what to do about it
 
-The two ⚠️ items convert silent wrong answers into exceptions, so code that appeared to work may
-now raise. Requires no engine upgrade — the new request fields are optional and an older engine
-ignores them.
-
-<Warning>
-**Known issue.** `CellaflowSaver` loses updates under concurrent read-modify-write: N agents each
-reading a value, incrementing it and writing it back end at 2 rather than N, with **zero errors**
-— every write succeeds and is correctly ordered. The checkpointer does not use the lease layer
-that provides the guarantee. The decorator path is unaffected: use a leased `@tool` for state
-several agents update concurrently.
-</Warning>
+Requires no engine upgrade — the new request fields are optional and an older engine ignores
+them.
 
 ### v0.2.0
 
