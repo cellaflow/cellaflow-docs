@@ -150,7 +150,7 @@ image sets them itself. The distinction matters when running the binary directly
 | `CELLAFLOW_MANAGEMENT_PORT` | HTTP health server port | `9090` |
 | `CELLAFLOW_OTLP_ENDPOINT` | OTLP telemetry endpoint | `http://localhost:4317` |
 | `CELLAFLOW_LOG_LEVEL` | Log level | `info` |
-| `CELLAFLOW_BACKEND` | Storage backend | `rocksdb` — the others are not implemented |
+| `CELLAFLOW_BACKEND` | Storage backend | `rocksdb` |
 | `CELLAFLOW_SESSION_IDLE_TIMEOUT_SECS` | Idle seconds before a session evicts from memory | `1800` |
 | `CELLAFLOW_ACTOR_SEND_TIMEOUT_MS` | Wait for room on a session's mailbox before shedding with `RESOURCE_EXHAUSTED` | `5000` |
 | `CELLAFLOW_MAX_LEASE_LIFETIME_MS` | Ceiling on a single lease, independent of heartbeats | `3600000` (1 hour) |

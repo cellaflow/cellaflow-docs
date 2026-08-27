@@ -213,10 +213,6 @@ one it is recovering — almost always a branch on a value computed *outside* a 
 recomputed on resume and can come out differently. Move whatever the branch tests inside a
 `@step`, so its result is committed once and replayed.
 
-Known limitation: the check compares step *names*, so it catches a changed shape of execution — a
-skipped branch, a reordering, an extra step — but not the same step replayed with different
-arguments. Deterministic branching is what keeps you out of that case.
-
 ### `DivergentStepError` — concurrent replicas disagreed
 
 Different cause entirely. Several replicas of one agent reached the same step with **different

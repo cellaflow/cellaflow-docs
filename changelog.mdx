@@ -25,15 +25,6 @@ icon: "history"
 Requires no engine upgrade — the new request fields are optional and an older engine ignores
 them.
 
-<Note>
-**Scope of the checkpointer's guarantees.** `CellaflowSaver` durably orders writes to a thread; it
-does not serialise a read-modify-write cycle. Several agents that each read a value, change it and
-write it back can therefore overwrite one another, and every write still succeeds.
-
-For state that several agents update concurrently, use a leased `@tool` on the decorator path,
-which arbitrates the operation rather than only ordering it.
-</Note>
-
 ### v0.2.0
 
 - ✅ `@workflow`, `@step`, `@tool` decorators with full `async def` support
