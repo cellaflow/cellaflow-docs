@@ -160,6 +160,14 @@ advance independent sequence counters and would otherwise compete for graph posi
 because a session id that changes between runs derives a different idempotency key, and a lease that
 cannot recognise the earlier attempt does not prevent the side effect from happening twice.
 
+`config` is the same mapping you pass to `invoke` — only `configurable.thread_id` is read from it,
+and a bare thread id string is accepted too. A malformed config is rejected by name rather than
+surfacing as a `KeyError` from inside the context manager.
+
+Leasing is independent of where checkpoints are stored, so `durable_tools` works with **any**
+LangGraph checkpointer — `MemorySaver`, `PostgresSaver`, or `CellaflowSaver`. A team already
+committed to Postgres for checkpoints can adopt leased tools without moving that storage.
+
 A `@tool` called outside any context raises `RuntimeError` rather than running unleased.
 
 ### `tool_session_id`
