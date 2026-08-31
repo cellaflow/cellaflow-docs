@@ -8,6 +8,8 @@ icon: "git-branch"
 
 `CellaflowSaver` is a drop-in replacement for LangGraph's in-memory checkpointer. It persists your `StateGraph` checkpoints to the CellaFlow engine — giving your LangGraph workflows **crash recovery, time-travel debugging, and cross-agent state isolation** without changing your graph definition.
 
+Beyond checkpointing, `durable_tools` makes a node's irreversible side effects happen [at most once](#leased-tool-calls-inside-nodes) — across a crash, a restart, or a resumed thread.
+
 ---
 
 ## Installation
@@ -120,6 +122,84 @@ app.invoke({"query": "climate change follow-up"}, config_1)
 
 ---
 
+## Leased Tool Calls Inside Nodes
+
+A checkpointer makes your graph's **state** durable. It does nothing for a node's **side effects**.
+
+If a node charges a customer and the process dies before the next checkpoint lands, the resumed run re-enters that node and charges again. The state is recovered perfectly; the money moved twice.
+
+`durable_tools` closes that window. Wrap the invocation, and any `@tool` called inside a node body is leased — it runs at most once per thread, across crashes and restarts.
+
+```python
+from cellaflow import CellaflowSaver, durable_tools, tool
+
+@tool(tool_name="issue_refund")
+def issue_refund(ticket_id: str, cents: int) -> dict:
+    return payment_gateway.charge(ticket_id, cents)   # irreversible
+
+def refund_node(state):
+    return {"receipt": issue_refund(state["ticket"], state["amount"])}
+
+app = builder.compile(checkpointer=CellaflowSaver(target="localhost:50051"))
+config = {"configurable": {"thread_id": "ticket-4417"}}
+
+with durable_tools(config):
+    app.invoke({"ticket": "T-4417", "amount": 2499}, config)
+```
+
+If that process dies after the charge, a new one resuming the thread re-runs the pending node — and the lease answers from the recorded result instead of calling the gateway:
+
+```
+phase 1: process exited with 17, ledger has 1 charge(s)
+phase 2: resumed and completed, ledger has 1 charge(s)
+```
+
+The node ran twice. The customer was charged once.
+
+<Note>
+Use the context manager rather than assembling the equivalent by hand. A tool's idempotency key is derived from its session id, and `durable_tools` derives that session from the thread — **stable** across restarts, so the lease still recognises the earlier attempt, and **separate** from the checkpointer's own session, so the two never compete for positions in the graph. A `@tool` called outside `durable_tools` raises rather than running unleased.
+</Note>
+
+### Using it with the checkpointer you already have
+
+`durable_tools` does not go through the checkpointer — it establishes the context the `@tool` reads and talks to the engine directly. Leasing therefore works with whichever `BaseCheckpointSaver` you already use, so adopting it does not mean moving your checkpoint storage.
+
+```python
+from langgraph.checkpoint.postgres import PostgresSaver
+from cellaflow import durable_tools, tool
+
+with PostgresSaver.from_conn_string(DB_URI) as checkpointer:
+    checkpointer.setup()
+    app = builder.compile(checkpointer=checkpointer)
+
+    with durable_tools(config):
+        app.invoke({"ticket": "T-4417", "amount": 2499}, config)
+```
+
+Checkpoints go to Postgres exactly as before; the node's irreversible tool call is leased. The same holds for `MemorySaver`, or any other checkpointer.
+
+### Two nodes calling the same tool
+
+Under the default `SCOPE_SESSION_WIDE` the key is derived from the tool name and arguments, **not** the graph position — which is what lets the guarantee survive a resume, since LangGraph re-runs only the pending node and therefore reaches tools in a different order than the first run did.
+
+The consequence: two *different* nodes calling the same `tool_name` with the same arguments in one thread deduplicate into a single execution. Give them distinct `tool_name`s, or an explicit `idempotency_key`, when they are genuinely different operations.
+
+### When replicas disagree about the arguments
+
+The derived key hashes the tool's arguments, so two replicas reaching the same node with **different** arguments derive different keys and do not contend — as far as the engine can tell, they are unrelated operations.
+
+Passing an explicit key makes them converge:
+
+```python
+@tool(tool_name="issue_refund", idempotency_key=f"refund-{ticket_id}")
+```
+
+That prevents the double charge, with a trade-off worth stating plainly: the replica that loses receives a result computed from arguments it did not supply. If they disagreed about the amount, the loser is handed a refund for someone else's number.
+
+The durable fix is to make the disputed value itself a leased step, so the replicas agree on it before reaching the step that spends it.
+
+---
+
 ## Checkpointer Configuration
 
 ```python
@@ -142,3 +222,4 @@ For production, set `CELLAFLOW_AUTH_TOKEN` in your engine environment, and the S
 | Node execution | `@step` — committed after completion |
 | Graph state | MessagePack-serialized payload in the event graph |
 | `list()` / `get()` | `GetSessionGraph` RPC |
+| `@tool` inside a node | Idempotency lease with a fencing token |
