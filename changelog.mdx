@@ -10,7 +10,16 @@ icon: "history"
 
 ## Python SDK
 
-### v0.3.0 — Latest
+### v0.4.0 — Latest
+
+- ✅ **Leased tool calls inside LangGraph nodes (`durable_tools`)** — wrap LangGraph invocations to lease `@tool` calls inside node bodies, guaranteeing irreversible side effects execute at most once across node failures, container crashes, and resumed runs
+- ✅ **Compatible with any checkpointer** — `durable_tools` works alongside `CellaflowSaver`, `PostgresSaver`, `MemorySaver`, or any other `BaseCheckpointSaver` without migrating checkpoint storage
+- ✅ **Multi-node graph execution** — dropped positional replay in `durable_tools` so complex graphs with multiple tool-bearing nodes resume correctly without sequence mismatches
+- ✅ **Robust config validation** — accepts bare string thread IDs or standard LangGraph config dictionaries, automatically hashes thread IDs containing colons to generate valid gRPC session IDs, and explicitly rejects empty thread IDs
+- ✅ **Thread history pagination & error handling** — follows engine page cursors when querying thread history, and clearly distinguishes empty threads from engine read failures
+- ✅ **Top-level package exports** — `durable_tools` and `tool_session_id` exported directly from `cellaflow`
+
+### v0.3.0
 
 - ✅ `IdempotencyScope.SCOPE_SHARED` — agents in **different sessions**, on different workflows and
   versions, converge on one execution within a named coordination domain
@@ -44,12 +53,15 @@ Install: [`pip install cellaflow`](https://pypi.org/project/cellaflow/)
 
 ### Latest
 
+- ✅ **Per-commit fsync durability (`CELLAFLOW_SYNC_WRITES`)** — synchronously flushes durable writes to RocksDB WAL before acknowledging them (default `true`), ensuring committed step outputs and timer events survive host power loss
+- ✅ **Hardened durable write safety** — all storage write paths (including `record_timer_fired`) strictly use explicit sync options, preventing non-durable write leakage
 - ✅ `WorkflowEngineService` — `StartSession`, `CommitStep`, `GetGraph`
 - ✅ `IdempotencyService` — `CheckIdempotencyCache`, `RenewLease`, `ReleaseLease`
 - ✅ RocksDB-backed append-only event graph
 - ✅ Sequence ordering guard — optimistic concurrency for step commits
 - ✅ Graph-position arbitration — a lease is refused before execution when the position is already
   committed, or claimed by a different step identity
+- ✅ Sequence claim authorization — sequence claims are strictly cleared only by the current lease owner
 - ✅ Maximum lease lifetime (`CELLAFLOW_MAX_LEASE_LIFETIME_MS`) — a worker that hangs while still
   heartbeating is eventually reclaimed, with fencing tokens making the reclaim safe
 - ✅ Boot recovery — session reconstruction and timer respawning on startup
