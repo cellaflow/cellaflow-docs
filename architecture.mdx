@@ -151,7 +151,9 @@ Every number below was measured against `ghcr.io/cellaflow/cellaflow:latest`, dr
 SDK's `CellaflowClient` over loopback gRPC, with a **single sequential writer** and a 136-byte
 MessagePack payload. The host was a 2018 Intel Core i7-8850H MacBook Pro running Docker Desktop —
 deliberately not fast hardware, so treat these as a floor rather than a best case. 400 samples per
-figure after 50 warm-up calls.
+figure after 50 warm-up calls, with `CELLAFLOW_SYNC_WRITES=false`. See
+[Durability and what it costs](#durability-and-what-it-costs) for the default setting and its
+measured price.
 
 | Operation | p50 | p95 | p99 |
 |:---|---:|---:|---:|
@@ -170,6 +172,38 @@ What you are paying for a durable step is therefore **one gRPC round trip**, not
 practical consequence: co-locating the engine with your agent (same host, or a sidecar) matters far
 more for latency than anything about the storage layer, and moving it across a network boundary will
 dominate every figure in the table above.
+
+### Durability and what it costs
+
+By default the engine **fsyncs each durable write before acknowledging it** (`CELLAFLOW_SYNC_WRITES`,
+default `true`). An acknowledged commit has therefore reached stable storage, not merely the
+operating system's page cache — so it survives host power loss and kernel panic, not only process
+and container failures.
+
+That guarantee matters most for a leased tool call. The record proving a side effect completed is
+written in the same transaction as the side effect's journal entry, so a commit that could vanish
+after being acknowledged would let a completed operation execute a second time on recovery. Syncing
+by default is what makes at-most-once hold across the full range of failures rather than a subset
+of them.
+
+Measured cost, on an Apple-silicon NVMe SSD (a different host from the table above, so compare the
+two columns to each other rather than to the numbers above):
+
+| Concurrent writers | `sync=true` p50 | `sync=false` p50 |
+|---:|---:|---:|
+| 1 | 0.5 – 0.9 ms | 0.4 ms |
+| 100 | 5.8 – 7.6 ms | 4.2 – 6.9 ms |
+
+Single-writer commits pay roughly 0.1–0.4 ms for the fsync and stay under a millisecond. Under
+concurrency the gap narrows into run-to-run variance, because RocksDB group-commits concurrent
+writers into a shared WAL sync — the cost is paid once for the batch rather than once per writer.
+
+<Note>
+These figures are from a local NVMe SSD. On network-attached storage such as EBS, fsync latency is
+substantially higher and will dominate commit cost. If you are running there and your failure model
+is process and container failures rather than power loss, `CELLAFLOW_SYNC_WRITES=false` trades the
+stronger guarantee for the lower latency — measure on your own storage before choosing.
+</Note>
 
 ### These are single-writer numbers
 
@@ -191,6 +225,7 @@ unit of concurrency: independent sessions never contend with one another, so a w
 across its own sessions scales flat while one shared session serialises behind its actor.
 
 <Note>
-Committed steps are written to RocksDB's write-ahead log, so a session survives a process crash, a
-container restart or a pod eviction and resumes from its last durable step.
+Committed steps are fsynced to RocksDB's write-ahead log before the commit is acknowledged, so a
+session survives a process crash, a container restart, a pod eviction and host power loss, and
+resumes from its last durable step.
 </Note>

@@ -154,6 +154,7 @@ image sets them itself. The distinction matters when running the binary directly
 | `CELLAFLOW_SESSION_IDLE_TIMEOUT_SECS` | Idle seconds before a session evicts from memory | `1800` |
 | `CELLAFLOW_ACTOR_SEND_TIMEOUT_MS` | Wait for room on a session's mailbox before shedding with `RESOURCE_EXHAUSTED` | `5000` |
 | `CELLAFLOW_MAX_LEASE_LIFETIME_MS` | Ceiling on a single lease, independent of heartbeats | `3600000` (1 hour) |
+| `CELLAFLOW_SYNC_WRITES` | fsync each durable write before acknowledging it | `true` |
 
 Most variables also accept an unprefixed fallback (`HOST`, `PORT`, `DB_PATH`, `AUTH_TOKEN`,
 `API_KEY`).
@@ -167,6 +168,14 @@ to run a locally built binary, you have to add it.
 </Warning>
 
 <Warning>
+**`CELLAFLOW_SYNC_WRITES` is the durability/latency dial.** Left at `true`, an acknowledged commit
+has reached stable storage and survives host power loss, not just a process or container failure.
+Set it to `false` and a commit is acknowledged once the write reaches the operating system's page
+cache — faster, and safe if your failure model is pods dying rather than hosts losing power. The
+cost of syncing is roughly 0.1–0.4 ms per commit on a local NVMe SSD and largely disappears under
+concurrent load, where RocksDB group-commits writers into a shared sync; on network-attached storage
+it is considerably higher. Measure on your own storage rather than assuming either way.
+
 **`CELLAFLOW_MAX_LEASE_LIFETIME_MS` is safe to raise and unsafe to lower.** It exists because a
 worker that hangs *without dying* heartbeats forever and would otherwise hold its lease — and its
 graph position — indefinitely. But reclaiming a worker that is merely slow lets a second worker
