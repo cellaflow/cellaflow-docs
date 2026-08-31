@@ -160,6 +160,12 @@ The node ran twice. The customer was charged once.
 Use the context manager rather than assembling the equivalent by hand. A tool's idempotency key is derived from its session id, and `durable_tools` derives that session from the thread — **stable** across restarts, so the lease still recognises the earlier attempt, and **separate** from the checkpointer's own session, so the two never compete for positions in the graph. A `@tool` called outside `durable_tools` raises rather than running unleased.
 </Note>
 
+### Two nodes calling the same tool
+
+Under the default `SCOPE_SESSION_WIDE` the key is derived from the tool name and arguments, **not** the graph position — which is what lets the guarantee survive a resume, since LangGraph re-runs only the pending node and therefore reaches tools in a different order than the first run did.
+
+The consequence: two *different* nodes calling the same `tool_name` with the same arguments in one thread deduplicate into a single execution. Give them distinct `tool_name`s, or an explicit `idempotency_key`, when they are genuinely different operations.
+
 ### When replicas disagree about the arguments
 
 The derived key hashes the tool's arguments, so two replicas reaching the same node with **different** arguments derive different keys and do not contend — as far as the engine can tell, they are unrelated operations.
