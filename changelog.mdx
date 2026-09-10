@@ -10,7 +10,36 @@ icon: "history"
 
 ## Python SDK
 
-### v0.4.0 — Latest
+### v0.5.0 — Latest
+
+<Warning>
+**Breaking.** `SCOPE_SHARED` now requires `shared_on` (or an explicit `idempotency_key`)
+and raises at import without one.
+</Warning>
+
+- ⚠️ **`shared_on` is required for `SCOPE_SHARED`** — names the arguments that identify the shared work, so agents may disagree about everything else and still converge on one execution
+- ✅ **Fixes a silent duplicate-execution defect** — the derived key previously hashed *every* argument, so heterogeneous agents that reasoned their way to different values each derived their own key and each performed the side effect. Measured at five agents proposing five refund amounts: five charges where one was correct
+- ✅ **Argument names validated at decoration time** — a typo in `shared_on` fails at import with the real parameter list, rather than silently hashing nothing and converging everything
+
+**Migrating from v0.4.0** — name what identifies the work:
+
+```python
+# before
+@tool(tool_name="issue_refund", scope=IdempotencyScope.SCOPE_SHARED)
+def issue_refund(ticket_id: str, amount_cents: int) -> dict: ...
+
+# after
+@tool(tool_name="issue_refund", scope=IdempotencyScope.SCOPE_SHARED,
+      shared_on=["ticket_id"])
+def issue_refund(ticket_id: str, amount_cents: int) -> dict: ...
+```
+
+`SCOPE_SESSION_WIDE`, `SCOPE_AGENT_PRIVATE` and `SCOPE_STEP_LOCAL` are unchanged and keep
+hashing every argument — replicas of one agent calling with different arguments genuinely
+*are* different operations there, and graph-position arbitration catches the divergence
+before either executes.
+
+### v0.4.0
 
 - ✅ **Leased tool calls inside LangGraph nodes (`durable_tools`)** — wrap LangGraph invocations to lease `@tool` calls inside node bodies, guaranteeing irreversible side effects execute at most once across node failures, container crashes, and resumed runs
 - ✅ **Compatible with any checkpointer** — `durable_tools` works alongside `CellaflowSaver`, `PostgresSaver`, `MemorySaver`, or any other `BaseCheckpointSaver` without migrating checkpoint storage
