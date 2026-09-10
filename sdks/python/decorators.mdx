@@ -92,7 +92,8 @@ def call_external_api(query: str) -> dict:
    ```
    [session_id]:[version]:[sequence]:[agent_id]:[tool_name]:[RFC8785_SHA256(args)]
    ```
-   Under `SCOPE_SHARED` the session and version are dropped, so agents in different sessions
+   Under `SCOPE_SHARED` the session and version are dropped and only the arguments named
+   in `shared_on` are hashed, so agents in different sessions
    converge on one key:
    ```
    shared:[coordination_id]:[tool_name]:[RFC8785_SHA256(args)]
@@ -223,7 +224,8 @@ on a single execution.
 ```python
 from cellaflow import workflow, tool, IdempotencyScope
 
-@tool(tool_name="publish_release_notes", scope=IdempotencyScope.SCOPE_SHARED)
+@tool(tool_name="publish_release_notes", scope=IdempotencyScope.SCOPE_SHARED,
+      shared_on=["version"])
 def publish(version: str) -> dict:
     return notes_service.publish(version)      # runs exactly once
 
@@ -253,6 +255,36 @@ There is no default, and `SCOPE_SHARED` without a `_coordination_id` raises `Val
 would make two unrelated callers of `send_email(to=alice)` deduplicate against each other — one
 agent's send is suppressed and it is handed a result it never asked for, with no error anywhere.
 </Warning>
+
+### Naming what identifies the work
+
+`shared_on` lists the arguments that identify the shared operation. Only those are
+hashed into the key, so agents may disagree about everything else and still converge.
+
+```python
+@tool(tool_name="issue_refund", scope=IdempotencyScope.SCOPE_SHARED,
+      shared_on=["ticket_id"])
+def issue_refund(ticket_id: str, amount_cents: int) -> dict: ...
+```
+
+Five agents proposing five different amounts for ticket `T-4417` converge on one refund.
+Five agents working on *different* tickets do not.
+
+<Warning>
+**`SCOPE_SHARED` requires `shared_on`** (or an explicit `idempotency_key`) and raises at
+import without one.
+
+Without it, every argument is hashed — and agents that converge on a shared side effect
+are precisely the agents that will not agree on every argument, because that is what
+makes them different agents. Each derives its own key and each performs the side effect.
+
+The check runs at decoration time rather than on the first call, because an agent cannot
+detect the divergence itself: it only ever sees its own arguments.
+</Warning>
+
+The trade-off this accepts, stated plainly: the agents that lose receive a result
+computed from arguments they did not supply. If the disputed value matters, make it its
+own leased step so they agree on it before reaching the step that spends it.
 
 ### What must match for two agents to converge
 

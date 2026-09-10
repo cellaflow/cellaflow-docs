@@ -86,8 +86,9 @@ Controls how results are shared across agents:
 # Only cached within the current superstep sequence
 @tool(scope=IdempotencyScope.SCOPE_STEP_LOCAL)
 
-# Shared across *different sessions* in a named coordination domain
-@tool(scope=IdempotencyScope.SCOPE_SHARED)
+# Shared across *different sessions* in a named coordination domain.
+# shared_on names the arguments that identify the work.
+@tool(scope=IdempotencyScope.SCOPE_SHARED, shared_on=["ticket_id"])
 ```
 
 ### Coordinating across sessions
@@ -99,7 +100,8 @@ with its own session, all reaching for the same external operation.
 
 `SCOPE_SHARED` is the scope for that case. It is the only one whose key omits `session_id`, and it
 omits `workflow_version` too, because heterogeneous agents will not be running the same workflow at
-the same version:
+the same version. It also hashes only the arguments named in `shared_on`, for the same reason —
+agents that reasoned independently will not agree on every argument:
 
 ```
 shared:[coordination_id]:[tool_name]:[RFC8785_SHA256(args)]
