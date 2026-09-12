@@ -110,15 +110,20 @@ A `@tool` derives its idempotency key from the **session id**, so a lease is onl
 that session. `@workflow` generates a fresh session per call unless you pass `_session_id` — which
 means that without a stable session id, a `@tool` is deduplicated *within* a run and not across a
 restart. If you are using `@tool` to make a side effect happen at most once across a crash, pass a
-stable `_session_id`. Inside LangGraph, use [`durable_tools`](#durable_tools), which derives it for you.
+stable `_session_id`. Or use [`durable_tools`](/sdks/python/durable-tools), which derives one for you — in LangGraph or any other framework.
 </Warning>
 
 ---
 
 ## `durable_tools`
 
-A context manager that makes `@tool` work inside LangGraph node bodies. Use it when your side
-effects live in graph nodes rather than in a `@workflow` function.
+A context manager that leases every `@tool` called inside it. Use it when your side effects live
+in agent tool calls rather than in a `@workflow` function.
+
+It is **not** LangGraph-specific: it takes a session id — a bare string, or a LangGraph config —
+and works with LlamaIndex, the OpenAI Agents SDK, CrewAI, AutoGen or a plain agent loop. See
+[Durable Tools](/sdks/python/durable-tools) for the full contract. The example below shows the
+LangGraph case.
 
 ```python
 from cellaflow import CellaflowSaver, durable_tools, tool

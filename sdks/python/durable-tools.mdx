@@ -1,0 +1,133 @@
+---
+title: "Durable Tools"
+description: "Lease a tool call so an irreversible side effect happens at most once, in any agent framework."
+icon: "shield-check"
+---
+
+# Durable Tools
+
+An agent framework makes your **state** durable. It does nothing for a tool's **side effects**.
+
+If your agent charges a card and the worker dies before the result is recorded, the retry charges again. The conversation is recovered perfectly; the money moved twice.
+
+`durable_tools` closes that window. Wrap the invocation, decorate the call that must not repeat, and the engine leases it.
+
+```python
+from cellaflow import durable_tools, tool
+
+@tool(tool_name="charge_card")
+def charge_card(order_id: str, cents: int) -> dict:
+    return gateway.charge(order_id, cents)      # irreversible
+
+with durable_tools(f"order-{order_id}"):
+    agent.run(...)                              # any framework
+```
+
+## It is not LangGraph-specific
+
+`durable_tools` needs two things, and neither is a framework:
+
+<CardGroup cols={2}>
+  <Card title="A session id" icon="fingerprint">
+    A bare string, or a LangGraph config — `configurable.thread_id` is read from it.
+  </Card>
+  <Card title="Tools invoked inside the block" icon="arrow-right-to-bracket">
+    Anything decorated with `@tool` and called while the block is open.
+  </Card>
+</CardGroup>
+
+### Verified frameworks
+
+| Framework | Status |
+| :--- | :--- |
+| **LangGraph** | Works |
+| **LlamaIndex** | Works |
+| **OpenAI Agents SDK** | Works |
+| **CrewAI** | Works |
+| **AutoGen** | Works |
+
+Frameworks differ in where they run a tool. Some call it on the caller's thread; some hand it to a worker that does not carry the caller's context. `durable_tools` handles both: when the context does not reach the tool and one session is open, the engine resolves it anyway.
+
+<Note>
+Running several sessions concurrently in one process? Then a tool dispatched
+off-context is genuinely ambiguous, and CellaFlow refuses to guess rather than
+attribute a charge to the wrong session. Bind the one you mean:
+
+```python
+with durable_tools(config) as session:
+    ...
+
+def my_tool(order_id):          # called by the framework
+    with session.bind():
+        return charge_card(order_id, 2499)
+```
+</Note>
+
+### Check your own stack in one run
+
+```python
+from cellaflow import durable_tools, tool
+
+@tool(tool_name="probe")
+def probe(x: str) -> dict:
+    print("EXECUTED")
+    return {"ok": True}
+
+with durable_tools("probe-session-1"):
+    agent.run(...)              # make your agent call probe()
+```
+
+Run it twice with the same session id. **One `EXECUTED` means leasing is working.**
+
+## Agents that never coordinated
+
+The interesting case is not one agent retrying. It is a support agent and a billing agent that each independently decided the same refund is owed — different sessions, no knowledge of each other, and they disagree about the amount.
+
+Nothing about the framework makes them converge, because they share no identity. `shared_on` constructs one from the work itself:
+
+```python
+from cellaflow import IdempotencyScope, durable_tools, tool
+
+@tool(
+    tool_name="issue_refund",        # pin it: agents are different functions
+    scope=IdempotencyScope.SCOPE_SHARED,
+    shared_on=["ticket_id"],         # the amount deliberately does not count
+)
+def issue_refund(ticket_id: str, amount_cents: int) -> dict:
+    return gateway.refund(ticket_id, amount_cents)
+
+with durable_tools(session_id, coordination_id=f"refund-{ticket_id}"):
+    agent.run(...)
+```
+
+Every agent naming the same `ticket_id` derives the same key and converges on one refund, **whichever framework each one is running.** The key omits the session and the workflow version, so a CrewAI agent and a LangGraph agent deduplicate against each other.
+
+<Tip>
+`shared_on` names the arguments that *identify* the work. Everything not named
+is something agents may disagree about while still converging — which is what
+makes them independent agents rather than replicas.
+</Tip>
+
+## What it does not do
+
+`durable_tools` does not make an external side effect exactly-once. Nothing can, without the far side participating: if your worker dies between the gateway call and the record of it, the charge already left the process.
+
+What it does is recover the work. The lease is a record in the engine, so when the holder disappears another worker reclaims it and the run finishes, with a durable record of what was attempted.
+
+<Note>
+If your gateway accepts a Stripe-style `Idempotency-Key` header, use it. That
+closes the window at the gateway and is strictly better than guarding it from
+outside. Most tool calls an agent makes have no such header, which is the case
+`durable_tools` exists for.
+</Note>
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="Decorators & API" icon="at-sign" href="/sdks/python/decorators">
+    Full reference for `@tool`, `IdempotencyScope` and `durable_tools`.
+  </Card>
+  <Card title="LangGraph" icon="diagram-project" href="/sdks/python/langgraph">
+    `CellaflowSaver`, and `durable_tools` alongside any checkpointer.
+  </Card>
+</CardGroup>

@@ -10,7 +10,18 @@ icon: "history"
 
 ## Python SDK
 
-### v0.5.0 — Latest
+### v0.6.0 — Latest
+
+- 🌐 **`durable_tools` works with any agent framework** — verified on LangGraph, LlamaIndex, the OpenAI Agents SDK, CrewAI and AutoGen. Where a framework dispatches a tool onto a worker that does not carry the caller's context, the session is recovered automatically; with several sessions open, `session.bind()` says which one you mean
+- 📦 **Importing `cellaflow` no longer pulls in LangGraph** — `CellaflowSaver` loads on first use, so a process using another framework, or none, does not pay for it
+- 🔑 **`durable_tools` moved to `cellaflow.durable`** — it never needed LangGraph, and living in that module hid it. `from cellaflow.langgraph import durable_tools` still works
+- 🔧 **Fixed: `pip install cellaflow` alongside CrewAI or AutoGen** — the declared protobuf floor did not match what the generated stubs require at import, so a resolvable install could fail to import. The floor is now `protobuf>=5.29.0` and matches the package
+
+<Card title="Durable Tools" icon="shield-check" href="/sdks/python/durable-tools">
+  Leasing a tool call in any framework, and converging independent agents on one side effect.
+</Card>
+
+### v0.5.0
 
 <Warning>
 **Breaking.** `SCOPE_SHARED` now requires `shared_on` (or an explicit `idempotency_key`)

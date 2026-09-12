@@ -67,6 +67,7 @@
         "expanded": true,
         "pages": [
           "sdks/python/decorators",
+          "sdks/python/durable-tools",
           "sdks/python/langgraph"
         ]
       },
