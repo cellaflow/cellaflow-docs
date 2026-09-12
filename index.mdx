@@ -1,6 +1,6 @@
 ---
 title: "CellaFlow Documentation"
-description: "The Execution Ledger for Multi-Agent AI. Crash-proof swarms, zero duplicate API spend."
+description: "The Execution Ledger for Multi-Agent AI. At-most-once side effects for LangGraph, CrewAI, AutoGen, LlamaIndex and OpenAI Agents."
 icon: "zap"
 ---
 
@@ -43,6 +43,40 @@ result = research_agent("autonomous AI architectures")
 - ✅ The `@tool` call is idempotent — if 50 agents in a swarm call `search_web` with the same query, **1 HTTP request runs**, and the result is broadcast to all 49 waiting agents (singleflight herd collapse)
 </Note>
 
+## Works with the framework you already run
+
+<CardGroup cols={5}>
+  <Card title="LangGraph" icon="diagram-project" />
+  <Card title="CrewAI" icon="users" />
+  <Card title="AutoGen" icon="robot" />
+  <Card title="LlamaIndex" icon="database" />
+  <Card title="OpenAI Agents" icon="sparkles" />
+</CardGroup>
+
+CellaFlow is not an agent framework and does not replace yours. Wrap the invocation,
+decorate the call that must not repeat, and the side effect is leased — whichever
+framework made it.
+
+```python
+from cellaflow import durable_tools, tool
+
+@tool(tool_name="charge_card")
+def charge_card(order_id: str, cents: int) -> dict:
+    return gateway.charge(order_id, cents)      # irreversible
+
+with durable_tools(f"order-{order_id}"):
+    agent.run(...)                              # any of the above
+```
+
+**Different teams on different frameworks, converging on the same operation** is the
+case this exists for. Name the work with `shared_on`, and a LangGraph agent and a
+CrewAI agent that never coordinated still produce one charge — the key omits the
+session and the framework, so it is the *work* that is identified, not the caller.
+
+<Card title="Durable Tools" icon="shield-check" href="/sdks/python/durable-tools">
+  The contract, the verified frameworks, and a one-run check for anything else.
+</Card>
+
 ## What makes CellaFlow different?
 
 <CardGroup cols={2}>
@@ -69,7 +103,7 @@ result = research_agent("autonomous AI architectures")
   <Card title="Core Concepts" icon="book" href="/concepts">
     Understand the Cognitive Graph, idempotency, and replay semantics.
   </Card>
-  <Card title="Python SDK" icon="code" href="/sdks/python/overview">
-    Full reference for `@workflow`, `@step`, `@tool`, and `CellaflowSaver`.
+  <Card title="Durable Tools" icon="shield-check" href="/sdks/python/durable-tools">
+    Lease a tool call in LangGraph, CrewAI, AutoGen, LlamaIndex or OpenAI Agents.
   </Card>
 </CardGroup>
