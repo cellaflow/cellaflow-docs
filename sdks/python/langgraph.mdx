@@ -130,6 +130,14 @@ If a node charges a customer and the process dies before the next checkpoint lan
 
 `durable_tools` closes that window. Wrap the invocation, and any `@tool` called inside a node body is leased — it runs at most once per thread, across crashes and restarts.
 
+<Note>
+`durable_tools` is not LangGraph-specific — it works with LlamaIndex, the OpenAI
+Agents SDK, CrewAI, AutoGen, or a plain agent loop. See
+[Durable Tools](/sdks/python/durable-tools) for the general contract and for
+converging independent agents on one side effect. The rest of this section shows
+it alongside a checkpointer.
+</Note>
+
 ```python
 from cellaflow import CellaflowSaver, durable_tools, tool
 
