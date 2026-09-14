@@ -30,14 +30,18 @@
   "navbar": {
     "links": [
       {
+        "label": "Contact",
+        "href": "mailto:hello@cellaflow.com"
+      },
+      {
         "type": "github",
         "href": "https://github.com/cellaflow/cellaflow-sdks"
       }
     ],
     "primary": {
       "type": "button",
-      "label": "Request Alpha Access",
-      "href": "https://cellaflow.com"
+      "label": "Get Started Free",
+      "href": "https://docs.cellaflow.com/quickstart"
     }
   },
   "footer": {
@@ -45,7 +49,39 @@
       "github": "https://github.com/cellaflow/cellaflow-sdks",
       "x": "https://x.com/cellaflow",
       "linkedin": "https://www.linkedin.com/company/cellaflow"
-    }
+    },
+    "links": [
+      {
+        "header": "Community",
+        "items": [
+          {
+            "label": "GitHub",
+            "href": "https://github.com/cellaflow/cellaflow-sdks"
+          },
+          {
+            "label": "PyPI SDK",
+            "href": "https://pypi.org/project/cellaflow/"
+          },
+          {
+            "label": "Docker Image",
+            "href": "https://github.com/orgs/cellaflow/packages/container/package/cellaflow"
+          }
+        ]
+      },
+      {
+        "header": "Contact",
+        "items": [
+          {
+            "label": "hello@cellaflow.com",
+            "href": "mailto:hello@cellaflow.com"
+          },
+          {
+            "label": "Book a Call",
+            "href": "https://calendly.com/druhin-bala/30min"
+          }
+        ]
+      }
+    ]
   },
   "navigation": {
     "groups": [
