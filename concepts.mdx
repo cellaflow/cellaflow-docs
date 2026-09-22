@@ -160,9 +160,9 @@ When a `@tool` acquires an idempotency lock, the engine issues a **fencing token
 
 The engine rejects any commit with a stale fencing token. This prevents **split-brain execution** — if a network partition causes two SDK instances to believe they hold the same lease, only the one with the current token can commit.
 
-<Warning>
-Fencing tokens are an internal mechanism. You don't interact with them directly — the `@tool` decorator manages the entire lease lifecycle automatically.
-</Warning>
+<Note>
+While the `@tool` decorator manages the lease lifecycle automatically for step deduplication, you can also use fencing tokens directly as a distributed lock primitive. The SDK provides `@task_lease`, `execution_lease`, and `async_execution_lease` to explicitly wrap execution entry points with liveness heartbeating and lease loss preemption.
+</Note>
 
 ---
 

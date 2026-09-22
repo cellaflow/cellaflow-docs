@@ -142,7 +142,7 @@ Checks the idempotency cache for a given key. Used by `@tool` before executing a
 
 ### `RenewLease` / `ReleaseLease`
 
-Background heartbeat and lease release RPCs. Managed automatically by `@tool` — you do not call these directly.
+Background heartbeat and lease release RPCs. Managed automatically by `@tool` and `@task_lease` — you do not call these directly.
 
 - **`RenewLease`**: Extends the lease TTL. Must be called within `heartbeat_interval_ms` from `CheckCacheResponse`. If renewal fails with `RENEW_FAILURE_REASON_SUPERSEDED`, the caller has been fenced out and must abort.
 - **`ReleaseLease`**: Releases the lock, optionally with a reason (`"TOOL_ERROR"`, `"RATE_LIMITED_429"`, `"CANCELLED"`).

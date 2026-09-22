@@ -10,7 +10,14 @@ icon: "history"
 
 ## Python SDK
 
-### v0.6.0 — Latest
+### v0.7.0 — Latest
+
+- 🔒 **Distributed Execution Lease Primitive (`CEL-157`)** — added native Python SDK support for the `task_execution_lease` primitive, acting as a distributed lock with liveness heartbeating.
+- ⚙️ **Context Managers & Decorators** — added synchronous `execution_lease` and asynchronous `async_execution_lease` context managers, plus a first-class `@task_lease` decorator for wrapping execution entry points.
+- 🛡️ **Lease Loss Preemption** — if the heartbeat fails and the lease expires while the main thread/task is running, it aborts execution (e.g., by injecting `asyncio.CancelledError` or invoking a callback).
+- 🔑 **Fencing Tokens** — yields a fencing token accessible downstream to enforce the lock.
+
+### v0.6.0
 
 - 🌐 **`durable_tools` works with any agent framework** — verified on LangGraph, LlamaIndex, the OpenAI Agents SDK, CrewAI and AutoGen. Where a framework dispatches a tool onto a worker that does not carry the caller's context, the session is recovered automatically; with several sessions open, `session.bind()` says which one you mean
 - 📦 **Importing `cellaflow` no longer pulls in LangGraph** — `CellaflowSaver` loads on first use, so a process using another framework, or none, does not pay for it
