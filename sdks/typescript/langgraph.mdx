@@ -1,0 +1,111 @@
+---
+title: "LangGraph.js"
+description: "Keep LangGraph's checkpointer for state, and lease the side effects inside your nodes."
+icon: "git-branch"
+---
+
+# LangGraph.js
+
+A checkpointer makes your **state** durable. It does nothing for a node's **side effects**.
+
+If a node charges a card and the process dies before the checkpoint lands, the resumed run charges again. The conversation is recovered perfectly; the money moved twice. That is true of every checkpointer, including LangGraph's own, because the checkpoint records what the graph decided and not what the graph spent.
+
+CellaFlow closes that window without replacing anything:
+
+```ts
+import { durableTools, tool } from "@cellaflow/sdk";
+
+const chargeCard = tool(
+  async (orderId: string, cents: number) => gateway.charge(orderId, cents),
+  { idempotencyKey: `charge:${orderId}`, toolName: "charge_card" },
+);
+
+const config = { configurable: { thread_id: `order-${orderId}` } };
+
+await durableTools(config, async () => {
+  await app.invoke({ orderId }, config);
+});
+```
+
+`durableTools` reads `configurable.thread_id` straight out of the config you already pass to `invoke`, so the session and the thread are the same identity with no second id to keep in sync.
+
+---
+
+## Use both checkpointers
+
+This integration is additive. Keep whichever LangGraph.js checkpointer you already run.
+
+```ts
+import { MemorySaver } from "@langchain/langgraph";
+
+const app = workflow.compile({ checkpointer: new MemorySaver() });
+```
+
+| | LangGraph checkpointer | CellaFlow `tool()` |
+| :--- | :--- | :--- |
+| Makes durable | graph state and message history | the side effect, and its result |
+| On resume | replays the graph to where it stopped | hands back what the call returned |
+| Protects against | losing the conversation | charging the card twice |
+
+<Note>
+`CellaflowSaver`, the drop-in LangGraph checkpointer, is available in the
+[Python SDK](/sdks/python/langgraph) only. There is no TypeScript equivalent
+today. Use a LangGraph.js checkpointer for state and CellaFlow for side effects.
+</Note>
+
+---
+
+## Why an explicit key inside a node
+
+Two replicas working the same node will not derive identical arguments. One computes a refund of 4900 and another 4850; one writes a different note. Derived keys would differ, both would be granted a lease, and both would act.
+
+Key on the fact that identifies the operation in your domain:
+
+```ts
+const issueRefund = tool(
+  async (cents: number) => gateway.refund(ticketId, cents),
+  { idempotencyKey: `refund:${ticketId}`, toolName: "issue_refund" },
+);
+```
+
+<Warning>
+This prevents the double refund. It does not prevent the second caller receiving
+a confirmation computed from *different* arguments than the one that executed. If
+the callers must agree on the arguments too, use
+[`IdempotencyScope.SHARED` with `sharedOn`](/sdks/typescript/tools), which makes
+the disagreement explicit instead of silently substituting one result for the
+other.
+</Warning>
+
+---
+
+## One thread, one execution
+
+<Warning>
+Do not run the same `thread_id` concurrently from more than one process.
+
+LangGraph's model is one execution per thread. Its loop tracks position in
+memory and re-reads nothing, so two invocations on one thread compute from the
+same parent state and the later write silently orphans the earlier one. This is a
+property of the framework, not of any particular checkpointer, and no checkpointer
+choice fixes it.
+</Warning>
+
+Fan-out **inside** one invocation is fine and is what LangGraph means by multi-agent. Subgraphs inherit the thread id and take their own namespace, and their writes are ordered per namespace.
+
+If you need several agents in separate processes converging on one action, that is what [`IdempotencyScope.SHARED`](/sdks/typescript/tools) is for, and it works regardless of which framework each agent runs.
+
+---
+
+## Tools the framework dispatches off-context
+
+LangGraph.js usually calls a tool on the invoking task, so `AsyncLocalStorage` carries the session and nothing extra is needed. When a tool is handed to a worker that does not carry the context, and more than one session is open in the process, bind the one you mean:
+
+```ts
+await durableTools(config, async (session) => {
+  const bound = (...args) => session.bind(() => chargeCard(...args));
+  await app.invoke(input, config);
+});
+```
+
+With a single open session the SDK resolves it without this.

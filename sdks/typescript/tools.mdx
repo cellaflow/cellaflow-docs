@@ -1,0 +1,127 @@
+---
+title: "Tools"
+description: "Lease a function so its side effect happens at most once, and commit what it returned."
+icon: "shield-check"
+---
+
+# Tools
+
+`tool()` wraps a function and returns a function with the same signature. Calling the wrapper asks the engine three questions before your code runs: has this already been done, is someone else doing it now, and may I proceed.
+
+```ts
+import { tool } from "@cellaflow/sdk";
+
+const chargeCard = tool(
+  async (orderId: string, cents: number) => gateway.charge(orderId, cents),
+  { toolName: "charge_card" },
+);
+```
+
+What that buys, in order:
+
+<CardGroup cols={3}>
+  <Card title="Admit one caller" icon="user-check">
+    A fenced lease with a monotonic token. Of ten callers reaching for the same action, one proceeds.
+  </Card>
+  <Card title="Record the result" icon="database">
+    The result and the journal write commit in one transaction, so the work outlives the process.
+  </Card>
+  <Card title="Hand it on" icon="share">
+    A later caller with the same key is given that record instead of running the body.
+  </Card>
+</CardGroup>
+
+The third is the one a lock cannot do. A lock answers who may act and has nowhere to put what they did, so when the holder dies the completed work is gone.
+
+---
+
+## The key
+
+By default the key is derived from the tool name and the arguments: the arguments are canonicalized with RFC 8785, hashed with SHA-256, and the first 16 bytes are used. You do not write it.
+
+Override it when the operation already has an identity in your domain:
+
+```ts
+const chargeCard = tool(
+  async (cents: number) => gateway.charge(orderId, cents),
+  { idempotencyKey: `charge:${orderId}`, toolName: "charge_card" },
+);
+```
+
+<Warning>
+An explicit `idempotencyKey` is evaluated where the tool is created, not where it
+is called. If the key must vary per call, either build the tool inside the scope
+that has the value, or leave the key out and let the arguments derive it.
+</Warning>
+
+---
+
+## Scopes
+
+`scope` decides what counts as the same operation.
+
+| Scope | Same operation when | Use for |
+| :--- | :--- | :--- |
+| `SESSION_WIDE` (default) | the same session, tool and arguments | a side effect that should happen once per run |
+| `AGENT_PRIVATE` | the same agent as well | a researcher and a coder calling one tool are different operations |
+| `STEP_LOCAL` | the same position in the graph as well | a call that may legitimately repeat later in the run |
+| `SHARED` | the same `coordinationId`, regardless of session | several agents, in any runtime, converging on one action |
+
+```ts
+import { IdempotencyScope, tool } from "@cellaflow/sdk";
+
+const notify = tool(
+  async (args: { ticket: string; amount: number; note: string }) =>
+    slack.post(args.ticket, args.note),
+  {
+    scope: IdempotencyScope.SHARED,
+    sharedOn: ["ticket"],
+    toolName: "notify",
+  },
+);
+```
+
+### `sharedOn`, and why it is required under `SHARED`
+
+Agents converging on one side effect will not agree on every argument. One computes a refund of 4900 and another 4850; one writes a different note. Hashing every argument gives each agent its own key, so all of them proceed and the point of the scope is lost.
+
+`sharedOn` names the arguments that define the operation. Everything else is ignored when deriving the key.
+
+<Note>
+`SHARED` requires a `coordinationId`, set on the surrounding
+[`durableTools`](/sdks/typescript/durable-tools) call. It names the work the
+agents are collaborating on: a ticket, a task, a tenant.
+</Note>
+
+<Warning>
+JavaScript has no named arguments, so `sharedOn` selects keys from a **single
+object argument**. A tool using `sharedOn` must take one options object.
+</Warning>
+
+---
+
+## When a second caller disagrees
+
+Two replicas working the same step can derive different arguments, and therefore different keys. The cache sees two unrelated operations and would grant both a lease. The engine also records which graph position a lease-holder intends to write to, so the disagreement is caught:
+
+```ts
+import { DivergentStepError } from "@cellaflow/sdk";
+
+try {
+  await chargeCard(orderId, 4900);
+} catch (err) {
+  if (err instanceof DivergentStepError) {
+    // Another agent owns this position with different inputs.
+    // Nothing was charged.
+  }
+  throw err;
+}
+```
+
+The refusal happens **before** the side effect, not after.
+
+---
+
+## `step()`
+
+`step()` is the same mechanism under a different name, for work that is expensive rather than irreversible: a model call you would rather not pay for twice. Identical options.
