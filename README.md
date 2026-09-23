@@ -1,6 +1,6 @@
 # cellaflow-docs
 
-Documentation for [CellaFlow](https://cellaflow.com) — The Execution Ledger for Multi-Agent AI.
+Documentation for [CellaFlow](https://cellaflow.com), the coordination and durability layer for AI agents.
 
 Powered by [Mintlify](https://mintlify.com).
 

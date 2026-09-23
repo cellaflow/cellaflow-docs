@@ -1,13 +1,15 @@
 ---
 title: "CellaFlow Documentation"
-description: "The Execution Ledger for Multi-Agent AI. At-most-once side effects for LangGraph, CrewAI, AutoGen, LlamaIndex and OpenAI Agents."
+description: "The coordination and durability layer for AI agents. Many agents, one action, and an outcome that survives the crash."
 icon: "zap"
 ---
 
 
-# The Execution Ledger for Multi-Agent AI
+# The coordination and durability layer for AI agents
 
-CellaFlow is a systems-grade Rust execution ledger that makes AI agent workflows **durable, idempotent, and crash-proof** — at roughly **2ms per committed step**.
+Many agents, one action. When several reach for the same action, one executes and the rest get the result, and the outcome survives the crash.
+
+CellaFlow is a systems-grade Rust engine that makes AI agent workflows **coordinated, idempotent, and crash-proof**, at roughly **2ms per committed step**.
 
 <Note>
 Measured single-writer against `ghcr.io/cellaflow/cellaflow:latest` on a 2018 Intel MacBook Pro: `CommitStep` p50 **1.6ms**, p99 **2.8ms**. Almost all of that is the gRPC round trip — the durable write itself does not register above the noise floor.

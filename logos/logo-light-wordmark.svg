@@ -25,8 +25,8 @@
     Cella<tspan fill="#2563EB">flow</tspan>
   </text>
 
-  <!-- Sub-label: EXECUTION LEDGER -->
+  <!-- Sub-label: COORDINATION LAYER -->
   <text x="35" y="26.5" font-family="'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="8.5" font-weight="800" letter-spacing="0.14em" fill="#0D9488">
-    EXECUTION LEDGER
+    COORDINATION LAYER
   </text>
 </svg>
