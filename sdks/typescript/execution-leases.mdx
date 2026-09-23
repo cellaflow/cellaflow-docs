@@ -1,0 +1,126 @@
+---
+title: "Execution Leases"
+description: "Admit one worker to a critical section, with fencing tokens and heartbeats."
+icon: "lock"
+---
+
+# Execution Leases
+
+`tool()` answers *has this been done*. An execution lease answers *may I act right now*, for work that is not a single function result: a migration, a long poll, a queue consumer, anything where two workers running at once is the failure.
+
+```ts
+import { executionLease } from "@cellaflow/sdk";
+
+await executionLease(
+  `sync:${tenantId}`,
+  { workerId: process.env.POD_NAME!, ttlMs: 30_000 },
+  async (lease) => {
+    for (const batch of batches) {
+      lease.check();          // throws if the lease was lost
+      await sync(batch);
+    }
+  },
+);
+```
+
+One holder at a time. The lease is heartbeated in the background for as long as your callback runs, and released when it returns or throws.
+
+---
+
+## Options
+
+| Option | Default | Meaning |
+| :--- | :--- | :--- |
+| `workerId` | required | Identifies this worker. Sent as the agent id. |
+| `ttlMs` | 30000 | How long the lease survives without a renewal. |
+| `heartbeatIntervalMs` | 5000 | How often it is renewed. |
+| `waitMs` | 0 | How long to wait for a lease another worker holds. Zero fails immediately. |
+| `onLeaseLost` | none | Called when the lease is lost. A notification, not a substitute for checking. |
+| `target` | `localhost:50051` | Engine address. |
+| `secure` | false | TLS. |
+
+```ts
+import { LeaseNotAcquired } from "@cellaflow/sdk";
+
+try {
+  await executionLease(key, { workerId, waitMs: 5_000 }, run);
+} catch (err) {
+  if (err instanceof LeaseNotAcquired) {
+    // Someone else is holding it. Not an error, usually.
+    return;
+  }
+  throw err;
+}
+```
+
+---
+
+## Losing a lease
+
+<Warning>
+Node has no task cancellation. Python's `preempt=True` cancels the running task;
+there is no equivalent here, and pretending otherwise would be worse than not
+offering it. Losing a lease cannot stop your code. **You have to check.**
+</Warning>
+
+Two ways, and you can use both:
+
+```ts
+await executionLease(key, { workerId }, async (lease) => {
+  // 1. Throws LeaseLostError if the lease is gone.
+  for (const batch of batches) {
+    lease.check();
+    await sync(batch);
+  }
+
+  // 2. An AbortSignal, for anything that takes one.
+  await fetch(url, { signal: lease.signal });
+});
+```
+
+Check before each irreversible step, not after. A lease lost between the check and the write is the window a fencing token exists to close: the engine refuses a stale token, so a superseded worker cannot overwrite a newer one's result.
+
+<Note>
+Loss is declared on elapsed time since the last confirmed renewal, not on a
+failed renewal call. One failed RPC is not proof that another worker took the
+lease, and treating it as such would stop a holder that still legitimately owns
+its position.
+</Note>
+
+---
+
+## A holder that hangs without dying
+
+A lease also has a hard lifetime ceiling, independent of heartbeats. A worker wedged on a slow model call is alive, so it keeps heartbeating, and without a ceiling it would hold the lease forever.
+
+This is the case a Postgres advisory lock cannot reach: advisory locks are released on connection **death**, so a live-but-stuck process never releases one. The ceiling is set on the engine with `CELLAFLOW_MAX_LEASE_LIFETIME_MS`.
+
+---
+
+## `taskLease`
+
+The same thing as a wrapper, when the lease covers a whole function:
+
+```ts
+import { taskLease } from "@cellaflow/sdk";
+
+const syncTenant = taskLease(
+  async (tenantId: string) => { ... },
+  { key: (tenantId) => `sync:${tenantId}`, workerId: process.env.POD_NAME! },
+);
+
+await syncTenant("acme");
+```
+
+`key` takes a string or a function of the arguments, so the lease can be per tenant, per job, or per whatever your work is actually keyed on.
+
+---
+
+## Which one do I want?
+
+| | `tool()` | `executionLease()` |
+| :--- | :--- | :--- |
+| Question it answers | has this already been done | may I act right now |
+| Result is committed | yes, and replayed to later callers | no |
+| Second caller gets | the first caller's result | refused, or waits |
+| Use for | charging a card, sending an email, a model call | a migration, a queue consumer, a scheduled job |

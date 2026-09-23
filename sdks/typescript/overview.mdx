@@ -1,0 +1,86 @@
+---
+title: "TypeScript SDK"
+description: "Install the CellaFlow TypeScript SDK and lease your first tool call."
+icon: "code"
+---
+
+# TypeScript SDK
+
+The official CellaFlow TypeScript SDK. Wraps the gRPC engine so a tool call happens at most once, its result survives the process that produced it, and agents in different runtimes converge on one action.
+
+[![npm version](https://img.shields.io/npm/v/@cellaflow/sdk.svg?color=blue)](https://www.npmjs.com/package/@cellaflow/sdk)
+[![Node](https://img.shields.io/badge/node-18%2B-blue.svg)](https://www.npmjs.com/package/@cellaflow/sdk)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20%2F%20MIT-blue.svg)](https://github.com/cellaflow/cellaflow-sdks)
+
+---
+
+## Installation
+
+```bash
+npm install @cellaflow/sdk
+```
+
+Requires Node 18 or newer. The package ships ESM with full type declarations.
+
+---
+
+## Your first leased tool
+
+```ts
+import { durableTools, tool } from "@cellaflow/sdk";
+
+const chargeCard = tool(
+  async (orderId: string, cents: number) => gateway.charge(orderId, cents),
+  { toolName: "charge_card" },
+);
+
+await durableTools(`order-${orderId}`, async () => {
+  await chargeCard(orderId, 4900);
+});
+```
+
+`chargeCard` now runs at most once per session. A second caller deriving the same key does not enter the function body; it is handed what the first call returned, including after the process that made the call has died.
+
+<Note>
+You did not write an idempotency key. The key is derived from the tool name and
+the arguments, canonicalized with RFC 8785 and hashed with SHA-256. Pass
+`idempotencyKey` only when the operation's identity is a business fact you
+already hold, such as `charge:${orderId}`.
+</Note>
+
+---
+
+## What is in the package
+
+<CardGroup cols={2}>
+  <Card title="tool()" icon="shield-check" href="/sdks/typescript/tools">
+    Lease a function so its side effect happens at most once, and commit what it returned.
+  </Card>
+  <Card title="durableTools()" icon="arrow-right-to-bracket" href="/sdks/typescript/durable-tools">
+    Open a session around any agent framework so the tools it calls are leased.
+  </Card>
+  <Card title="executionLease()" icon="lock" href="/sdks/typescript/execution-leases">
+    Admit one worker to a critical section, with fencing tokens and heartbeats.
+  </Card>
+  <Card title="CellaflowClient" icon="plug" href="/api-reference">
+    The typed gRPC client, when you want the RPCs directly.
+  </Card>
+</CardGroup>
+
+---
+
+## Parity with the Python SDK
+
+Both SDKs derive identical keys from identical inputs. This is verified against reference hashes rather than assumed, because `IdempotencyScope.SHARED` exists so that agents in different runtimes converge on one side effect, and that only works if the derivation is byte-identical.
+
+| Python | TypeScript |
+| :--- | :--- |
+| `@tool(...)` on a function | `tool(fn, opts)` returning a wrapped function |
+| `with durable_tools(config):` | `await durableTools(config, async () => { ... })` |
+| `async with async_execution_lease(...)` | `await executionLease(key, opts, async (lease) => { ... })` |
+| `@task_lease(...)` | `taskLease(fn, opts)` |
+| `contextvars` | `AsyncLocalStorage` |
+
+Two things differ deliberately, and both are documented where they apply: Node has no task cancellation, so a lost lease is surfaced through [`AbortSignal` and `lease.check()`](/sdks/typescript/execution-leases) rather than by cancelling your work. And JavaScript has no named arguments, so [`sharedOn`](/sdks/typescript/tools) selects keys from a single object argument.
+
+The LangGraph checkpointer is Python-only today.

@@ -1,0 +1,119 @@
+---
+title: "Durable Tools"
+description: "Open a session around any agent framework so the tools it calls are leased."
+icon: "arrow-right-to-bracket"
+---
+
+# Durable Tools
+
+An agent framework makes your **state** durable. It does nothing for a tool's **side effects**.
+
+If your agent charges a card and the worker dies before the result is recorded, the retry charges again. The conversation is recovered perfectly; the money moved twice.
+
+`durableTools` closes that window. Open a session around the invocation, wrap the call that must not repeat, and the engine leases it.
+
+```ts
+import { durableTools, tool } from "@cellaflow/sdk";
+
+const chargeCard = tool(
+  async (orderId: string, cents: number) => gateway.charge(orderId, cents),
+  { toolName: "charge_card" },
+);
+
+await durableTools(`order-${orderId}`, async () => {
+  await app.invoke({ orderId }, config);   // any framework
+});
+```
+
+## It is not framework-specific
+
+`durableTools` needs two things, and neither is a framework:
+
+<CardGroup cols={2}>
+  <Card title="A session id" icon="fingerprint">
+    A bare string, or a LangGraph config. `configurable.thread_id` is read from it.
+  </Card>
+  <Card title="Tools called inside the callback" icon="arrow-right-to-bracket">
+    Anything built with `tool()` and invoked while the callback is running.
+  </Card>
+</CardGroup>
+
+```ts
+// Both of these are the same session.
+await durableTools("ticket-4417", fn);
+await durableTools({ configurable: { thread_id: "ticket-4417" } }, fn);
+```
+
+Context propagates through `AsyncLocalStorage`, so a tool called anywhere inside the callback is leased, however deep the framework's call stack goes.
+
+---
+
+## Options
+
+```ts
+await durableTools(
+  "ticket-4417",
+  {
+    target: "engine.internal:50051",   // defaults to localhost:50051
+    secure: true,                       // TLS
+    coordinationId: "ticket-4417",      // required by IdempotencyScope.SHARED
+    workflowId: "support-agent",
+    version: "1.2.0",
+  },
+  async (session) => { ... },
+);
+```
+
+`coordinationId` names the work several agents are collaborating on. It is required by [`SHARED`](/sdks/typescript/tools) and ignored otherwise.
+
+---
+
+## When the framework dispatches off-context
+
+Some frameworks hand a tool to a worker that does not carry the caller's async context. With a single open session the SDK resolves it anyway.
+
+With several sessions open in one process, a tool dispatched off-context is genuinely ambiguous, and CellaFlow refuses to guess rather than attribute a charge to the wrong session. Bind the one you mean:
+
+```ts
+await durableTools(config, async (session) => {
+  registerTool((...args) => session.bind(() => chargeCard(...args)));
+  await app.invoke(input, config);
+});
+```
+
+---
+
+## Session ids
+
+`toolSessionId` derives the engine session id from a thread id. It is applied for you; you need it only when you are talking to the client directly.
+
+```ts
+import { toolSessionId } from "@cellaflow/sdk";
+
+toolSessionId("ticket-4417");
+// "ticket-4417-cellaflow-tools"
+
+toolSessionId("tenant:42:thread-7");
+// "lgthread-d489b97e2aa0273b504f364b4f2809cd-cellaflow-tools"
+// hashed, because the thread id contains a colon
+```
+
+<Note>
+A thread id containing a colon is hashed rather than rejected. Session ids are
+validated to contain no colons, because the engine splits sequence-claim keys on
+one, and a colon in the id would make that split ambiguous.
+</Note>
+
+<Warning>
+Give every thread its own id. An empty or shared id puts unrelated runs in one
+session, where they deduplicate against each other and the second run is handed
+the first one's results.
+</Warning>
+
+---
+
+## Concurrent calls
+
+Tools in one session take successive positions in its graph, which is what lets the engine detect two replicas diverging at the same step.
+
+If your agent fans out genuinely independent calls in parallel, they do not share one ordered position. Give each its own session, keyed on the operation, and let the idempotency cache do the work. The cache is position-independent and works across sessions by design.
