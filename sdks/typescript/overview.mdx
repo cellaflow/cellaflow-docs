@@ -62,8 +62,8 @@ already hold, such as `charge:${orderId}`.
   <Card title="executionLease()" icon="lock" href="/sdks/typescript/execution-leases">
     Admit one worker to a critical section, with fencing tokens and heartbeats.
   </Card>
-  <Card title="CellaflowClient" icon="plug" href="/api-reference">
-    The typed gRPC client, when you want the RPCs directly.
+  <Card title="LangGraph.js" icon="git-branch" href="/sdks/typescript/langgraph">
+    Keep LangGraph's checkpointer for state, and lease the side effects in your nodes.
   </Card>
 </CardGroup>
 
@@ -83,4 +83,6 @@ Both SDKs derive identical keys from identical inputs. This is verified against 
 
 Two things differ deliberately, and both are documented where they apply: Node has no task cancellation, so a lost lease is surfaced through [`AbortSignal` and `lease.check()`](/sdks/typescript/execution-leases) rather than by cancelling your work. And JavaScript has no named arguments, so [`sharedOn`](/sdks/typescript/tools) selects keys from a single object argument.
 
-The LangGraph checkpointer is Python-only today.
+The `CellaflowSaver` checkpointer is Python-only today. LangGraph.js users keep
+their own checkpointer for state and lease side effects inside nodes, which is
+covered in [LangGraph.js](/sdks/typescript/langgraph).

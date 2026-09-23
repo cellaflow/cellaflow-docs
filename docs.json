@@ -119,7 +119,8 @@
         "pages": [
           "sdks/typescript/tools",
           "sdks/typescript/durable-tools",
-          "sdks/typescript/execution-leases"
+          "sdks/typescript/execution-leases",
+          "sdks/typescript/langgraph"
         ]
       },
       {
