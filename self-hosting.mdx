@@ -19,8 +19,27 @@ docker run -d \
   --name cellaflow \
   -p 50051:50051 \
   -p 9090:9090 \
+  -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
   ghcr.io/cellaflow/cellaflow:latest
 ```
+
+<Warning>
+**The engine refuses to start without `CELLAFLOW_AUTH_TOKEN` or
+`CELLAFLOW_ALLOW_UNAUTHENTICATED=true`.** With neither set, every caller would be
+accepted, and nothing in the process can tell a laptop from a reachable host, so
+the decision is yours to state rather than the engine's to guess. Omit both and
+the container exits at boot with:
+
+```
+No authentication token is configured, so every caller would be accepted.
+Set CELLAFLOW_AUTH_TOKEN to require credentials, or set
+CELLAFLOW_ALLOW_UNAUTHENTICATED=true to serve without them deliberately.
+```
+
+Failing at boot rather than at the first request means an orchestrator shows you
+a crash-looping container instead of quietly serving an open port. Use the opt-out
+for local development only; anywhere else, set a token.
+</Warning>
 
 | Port | Purpose |
 |:---|:---|
@@ -46,6 +65,7 @@ docker run -d \
   -p 50051:50051 \
   -p 9090:9090 \
   -v $(pwd)/cellaflow-data:/data \
+  -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
   ghcr.io/cellaflow/cellaflow:latest
 ```
 
@@ -118,6 +138,7 @@ docker run -d \
   -p 50051:50051 \
   -e CELLAFLOW_TLS_CERT=/certs/cert.pem \
   -e CELLAFLOW_TLS_KEY=/certs/key.pem \
+  -e CELLAFLOW_AUTH_TOKEN=your-secret-key \
   -v $(pwd)/certs:/certs \
   ghcr.io/cellaflow/cellaflow:latest
 ```
@@ -144,7 +165,8 @@ image sets them itself. The distinction matters when running the binary directly
 
 | Variable | Description | Default |
 |:---|:---|:---|
-| `CELLAFLOW_AUTH_TOKEN` | API key for Bearer / `x-api-key` authentication | None (auth disabled) |
+| `CELLAFLOW_AUTH_TOKEN` | API key for Bearer / `x-api-key` authentication | None |
+| `CELLAFLOW_ALLOW_UNAUTHENTICATED` | Serve with no credentials, deliberately. Required to boot when `CELLAFLOW_AUTH_TOKEN` is unset | `false` |
 | `CELLAFLOW_TLS_CERT` | Path to TLS certificate file (PEM) | None (cleartext) |
 | `CELLAFLOW_TLS_KEY` | Path to TLS private key file (PEM) | None (cleartext) |
 | `CELLAFLOW_MANAGEMENT_PORT` | HTTP health server port | `9090` |
@@ -218,6 +240,7 @@ docker run -d \
   --name cellaflow \
   -p 50051:50051 \
   -e CELLAFLOW_OTLP_ENDPOINT=http://jaeger:4317 \
+  -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
   ghcr.io/cellaflow/cellaflow:latest
 ```
 
