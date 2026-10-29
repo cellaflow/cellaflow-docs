@@ -1,5 +1,5 @@
 ---
-title: "CellaFlow Documentation"
+title: "Cellaflow Documentation"
 description: "The coordination and durability layer for AI agents. Many agents, one action, and an outcome that survives the crash."
 icon: "zap"
 ---
@@ -9,7 +9,7 @@ icon: "zap"
 
 Many agents, one action. When several reach for the same action, one executes and the rest get the result, and the outcome survives the crash.
 
-CellaFlow is a systems-grade Rust engine that makes AI agent workflows **coordinated, idempotent, and crash-proof**, at roughly **2ms per committed step**.
+Cellaflow is a systems-grade Rust engine that makes AI agent workflows **coordinated, idempotent, and crash-proof**, at roughly **2ms per committed step**.
 
 <Note>
 Measured single-writer against `ghcr.io/cellaflow/cellaflow:latest` on a 2018 Intel MacBook Pro: `CommitStep` p50 **1.6ms**, p99 **2.8ms**. Almost all of that is the gRPC round trip — the durable write itself does not register above the noise floor.
@@ -23,7 +23,7 @@ from cellaflow import workflow, step, tool, IdempotencyScope
 @tool(scope=IdempotencyScope.SCOPE_SESSION_WIDE)
 def search_web(query: str) -> dict:
     """Calls an external API. Runs once — even if 50 agents ask for the same result."""
-    return {"query": query, "results": ["CellaFlow Overview", "Durable Execution Docs"]}
+    return {"query": query, "results": ["Cellaflow Overview", "Durable Execution Docs"]}
 
 @step
 def summarize(data: dict) -> str:
@@ -40,7 +40,7 @@ result = research_agent("autonomous AI architectures")
 <Note>
 **What just happened?**
 
-- ✅ Every step result was durably committed to CellaFlow's append-only event graph (backed by RocksDB)
+- ✅ Every step result was durably committed to Cellaflow's append-only event graph (backed by RocksDB)
 - ✅ If this process crashes mid-run, restarting it with the same session ID resumes **exactly** where it stopped — zero re-execution of completed steps
 - ✅ The `@tool` call is idempotent — if 50 agents in a swarm call `search_web` with the same query, **1 HTTP request runs**, and the result is broadcast to all 49 waiting agents (singleflight herd collapse)
 </Note>
@@ -55,7 +55,7 @@ result = research_agent("autonomous AI architectures")
   <Card title="OpenAI Agents" icon="sparkles" />
 </CardGroup>
 
-CellaFlow is not an agent framework and does not replace yours. Wrap the invocation,
+Cellaflow is not an agent framework and does not replace yours. Wrap the invocation,
 decorate the call that must not repeat, and the side effect is leased — whichever
 framework made it.
 
@@ -79,7 +79,17 @@ session and the framework, so it is the *work* that is identified, not the calle
   The contract, the verified frameworks, and a one-run check for anything else.
 </Card>
 
-## What makes CellaFlow different?
+## What makes Cellaflow different?
+
+A crashed agent is always restarted by something. Kubernetes reschedules the pod,
+the queue redelivers the message, the framework retries the node. That restart is
+what produces the second order: if nothing had retried, you would have one order
+and a failed run.
+
+Kubernetes restores the process. Your checkpointer restores the state. Neither
+records what the process already did to the outside world. Cellaflow records it,
+and hands that record back on the retry instead of letting the call happen a
+second time.
 
 <CardGroup cols={2}>
   <Card title="Durable Execution" icon="shield-check">
