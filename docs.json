@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "CellaFlow",
+  "name": "Cellaflow",
   "colors": {
     "primary": "#3b82f6",
     "light": "#60a5fa",

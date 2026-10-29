@@ -10,7 +10,7 @@ A checkpointer makes your **state** durable. It does nothing for a node's **side
 
 If a node charges a card and the process dies before the checkpoint lands, the resumed run charges again. The conversation is recovered perfectly; the money moved twice. That is true of every checkpointer, including LangGraph's own, because the checkpoint records what the graph decided and not what the graph spent.
 
-CellaFlow closes that window without replacing anything:
+Cellaflow closes that window without replacing anything:
 
 ```ts
 import { durableTools, tool } from "@cellaflow/sdk";
@@ -41,7 +41,7 @@ import { MemorySaver } from "@langchain/langgraph";
 const app = workflow.compile({ checkpointer: new MemorySaver() });
 ```
 
-| | LangGraph checkpointer | CellaFlow `tool()` |
+| | LangGraph checkpointer | Cellaflow `tool()` |
 | :--- | :--- | :--- |
 | Makes durable | graph state and message history | the side effect, and its result |
 | On resume | replays the graph to where it stopped | hands back what the call returned |
@@ -50,7 +50,7 @@ const app = workflow.compile({ checkpointer: new MemorySaver() });
 <Note>
 `CellaflowSaver`, the drop-in LangGraph checkpointer, is available in the
 [Python SDK](/sdks/python/langgraph) only. There is no TypeScript equivalent
-today. Use a LangGraph.js checkpointer for state and CellaFlow for side effects.
+today. Use a LangGraph.js checkpointer for state and Cellaflow for side effects.
 </Note>
 
 ---

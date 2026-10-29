@@ -72,7 +72,7 @@ await durableTools(
 
 Some frameworks hand a tool to a worker that does not carry the caller's async context. With a single open session the SDK resolves it anyway.
 
-With several sessions open in one process, a tool dispatched off-context is genuinely ambiguous, and CellaFlow refuses to guess rather than attribute a charge to the wrong session. Bind the one you mean:
+With several sessions open in one process, a tool dispatched off-context is genuinely ambiguous, and Cellaflow refuses to guess rather than attribute a charge to the wrong session. Bind the one you mean:
 
 ```ts
 await durableTools(config, async (session) => {
