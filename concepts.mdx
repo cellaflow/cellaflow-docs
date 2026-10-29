@@ -1,18 +1,18 @@
 ---
 title: "Core Concepts"
-description: "The mental model behind CellaFlow — event graphs, deterministic replay, and multi-agent coordination."
+description: "The mental model behind Cellaflow — event graphs, deterministic replay, and multi-agent coordination."
 icon: "book"
 ---
 
 # Core Concepts
 
-Five concepts explain how CellaFlow works. Once you understand these, the behaviour of every decorator and API call becomes obvious.
+Five concepts explain how Cellaflow works. Once you understand these, the behaviour of every decorator and API call becomes obvious.
 
 ---
 
 ## 1. The Cognitive Graph
 
-Every CellaFlow workflow maintains an **append-only event graph** stored in RocksDB — a sequence of immutable step records, each containing:
+Every Cellaflow workflow maintains an **append-only event graph** stored in RocksDB — a sequence of immutable step records, each containing:
 
 - The step name and sequence number
 - The serialized input and output (MessagePack)
@@ -33,7 +33,7 @@ Session: 3f7491d9
 └── seq:3  format_report("BUY signal") → [PENDING]         💥 CRASHED
 ```
 
-On restart with this session ID, CellaFlow replays seq:1 and seq:2 from the graph (0ms), then resumes live execution at seq:3.
+On restart with this session ID, Cellaflow replays seq:1 and seq:2 from the graph (0ms), then resumes live execution at seq:3.
 
 ---
 
@@ -125,7 +125,7 @@ for the full rules.
 
 ## 4. Non-Persistable Zones (NPZ)
 
-Some operations must not be checkpointed mid-execution — specifically, **streaming LLM responses**. If CellaFlow commits a partial token stream to the event graph and then replays it, the downstream consumer receives truncated output.
+Some operations must not be checkpointed mid-execution — specifically, **streaming LLM responses**. If Cellaflow commits a partial token stream to the event graph and then replays it, the downstream consumer receives truncated output.
 
 NPZs solve this by **suspending checkpoint commits** for the duration of the block:
 

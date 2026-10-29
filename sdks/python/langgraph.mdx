@@ -6,7 +6,7 @@ icon: "git-branch"
 
 # LangGraph Integration
 
-`CellaflowSaver` is a drop-in replacement for LangGraph's in-memory checkpointer. It persists your `StateGraph` checkpoints to the CellaFlow engine — giving your LangGraph workflows **crash recovery, time-travel debugging, and cross-agent state isolation** without changing your graph definition.
+`CellaflowSaver` is a drop-in replacement for LangGraph's in-memory checkpointer. It persists your `StateGraph` checkpoints to the Cellaflow engine — giving your LangGraph workflows **crash recovery, time-travel debugging, and cross-agent state isolation** without changing your graph definition.
 
 Beyond checkpointing, `durable_tools` makes a node's irreversible side effects happen [at most once](#leased-tool-calls-inside-nodes) — across a crash, a restart, or a resumed thread.
 
@@ -55,10 +55,10 @@ builder.add_edge(START, "planner")
 builder.add_edge("planner", "reporter")
 builder.add_edge("reporter", END)
 
-# 5. Compile with CellaFlow persistence
+# 5. Compile with Cellaflow persistence
 app = builder.compile(checkpointer=checkpointer)
 
-# 6. Run with a thread_id (maps to a CellaFlow session)
+# 6. Run with a thread_id (maps to a Cellaflow session)
 config = {"configurable": {"thread_id": "research-session-42"}}
 result = app.invoke({"query": "autonomous AI agents"}, config)
 print(result)
@@ -68,7 +68,7 @@ print(result)
 
 ## Crash Recovery
 
-If your process crashes mid-graph, re-invoke with the same `thread_id`. CellaFlow replays committed checkpoints and resumes from the last committed node:
+If your process crashes mid-graph, re-invoke with the same `thread_id`. Cellaflow replays committed checkpoints and resumes from the last committed node:
 
 ```python
 # Original run crashes after "planner" node
@@ -105,7 +105,7 @@ Use this to inspect agent state at any point in the graph's execution history �
 
 ## Multi-Turn Conversations
 
-`thread_id` maps directly to a CellaFlow session. Use different `thread_id` values for different conversation threads:
+`thread_id` maps directly to a Cellaflow session. Use different `thread_id` values for different conversation threads:
 
 ```python
 # Thread 1
@@ -221,9 +221,9 @@ For production, set `CELLAFLOW_AUTH_TOKEN` in your engine environment, and the S
 
 ---
 
-## How it maps to CellaFlow primitives
+## How it maps to Cellaflow primitives
 
-| LangGraph concept | CellaFlow equivalent |
+| LangGraph concept | Cellaflow equivalent |
 |:---|:---|
 | `thread_id` | Session ID |
 | Checkpoint | Step commit in the event graph |

@@ -1,12 +1,12 @@
 ---
 title: "Architecture"
-description: "How the CellaFlow engine, Python SDK, and RocksDB state store fit together."
+description: "How the Cellaflow engine, Python SDK, and RocksDB state store fit together."
 icon: "layers"
 ---
 
 # Architecture
 
-CellaFlow has three layers that work together: the **Python SDK** (decorators + gRPC client), the **Rust Engine** (state machine + persistence), and **RocksDB** (durable storage).
+Cellaflow has three layers that work together: the **Python SDK** (decorators + gRPC client), the **Rust Engine** (state machine + persistence), and **RocksDB** (durable storage).
 
 ---
 
@@ -27,7 +27,7 @@ CellaFlow has three layers that work together: the **Python SDK** (decorators + 
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CellaFlow Rust Engine                          │
+│                    Cellaflow Rust Engine                          │
 │                                                                   │
 │   WorkflowEngineService        IdempotencyService                │
 │   ─────────────────────        ──────────────────                │

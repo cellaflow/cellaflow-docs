@@ -1,12 +1,12 @@
 ---
 title: "Self-Hosting"
-description: "Run the CellaFlow engine with Docker, configure TLS and authentication, and deploy to production."
+description: "Run the Cellaflow engine with Docker, configure TLS and authentication, and deploy to production."
 icon: "server"
 ---
 
 # Self-Hosting
 
-The CellaFlow engine is distributed as a Docker image. This page covers running it locally for development and deploying it in production with TLS and authentication.
+The Cellaflow engine is distributed as a Docker image. This page covers running it locally for development and deploying it in production with TLS and authentication.
 
 ---
 
@@ -225,7 +225,7 @@ Do not route gRPC traffic to the engine until `/health/ready` returns 200. The e
 
 ## Observability
 
-CellaFlow emits OpenTelemetry traces and metrics to an OTLP collector. In local development, you can use the OpenTelemetry Collector or Jaeger:
+Cellaflow emits OpenTelemetry traces and metrics to an OTLP collector. In local development, you can use the OpenTelemetry Collector or Jaeger:
 
 ```bash
 # Run Jaeger locally
