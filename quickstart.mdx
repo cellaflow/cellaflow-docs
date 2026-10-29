@@ -1,12 +1,19 @@
 ---
 title: "Quickstart"
-description: "From zero to a running crash-proof AI agent in under 3 minutes."
+description: "Start the engine, place an order, kill the process mid-run, and resume without placing it twice."
 icon: "play"
 ---
 
 # Quickstart
 
-You'll start the CellaFlow engine, install the Python SDK, run a workflow, crash it mid-execution, and watch it recover — all in under 3 minutes.
+You will start the Cellaflow engine, install the Python SDK, run a checkout that
+places an order, kill the process the instant after the order is placed, and
+resume the same session. The order is placed once.
+
+This is the example behind the quickstart on
+[cellaflow.com](https://cellaflow.com/#quickstart). It is one file with no
+dependencies beyond the SDK, and it also lives in the SDK repo at
+[`examples/quickstart`](https://github.com/cellaflow/cellaflow-sdks/tree/main/examples/quickstart).
 
 ## Prerequisites
 
@@ -15,30 +22,53 @@ You'll start the CellaFlow engine, install the Python SDK, run a workflow, crash
 
 ---
 
-## Step 1 — Start the CellaFlow Engine
+## Step 1. Start the Cellaflow engine
 
-The engine is the durable state backend that all your agents connect to. Run it locally with a single Docker command:
+The engine is the durable state backend your agents connect to. Run it locally
+with a single Docker command:
 
 ```bash
 docker run -d \
   --name cellaflow \
   -p 50051:50051 \
   -p 9090:9090 \
+  -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
   ghcr.io/cellaflow/cellaflow:latest
 ```
 
-Verify it's healthy:
+Verify it is healthy:
 
 ```bash
 curl http://localhost:9090/health/ready
-# → {"status":"ready"}
+# {"status":"ready"}
 ```
 
+<Warning>
+**`CELLAFLOW_ALLOW_UNAUTHENTICATED=true` is not optional here.** Without it, and
+without a `CELLAFLOW_AUTH_TOKEN`, the engine refuses to start and the container
+exits immediately:
+
+```
+No authentication token is configured, so every caller would be accepted.
+Set CELLAFLOW_AUTH_TOKEN to require credentials, or set
+CELLAFLOW_ALLOW_UNAUTHENTICATED=true to serve without them deliberately.
+```
+
+An unset token would accept every caller, and nothing in the process can tell a
+laptop from a reachable host, so the engine makes you say which one it is rather
+than guessing. For anything beyond local development, set a token instead. See
+[Self-Hosting](/self-hosting#authentication).
+</Warning>
+
 <Tip>
-The engine persists state to RocksDB inside the container. For production, mount a volume: add `-v $(pwd)/data:/data` to the Docker command.
+The engine persists state to RocksDB inside the container, which is lost when the
+container is removed. To keep it, mount a volume: add `-v $(pwd)/cellaflow-data:/data`
+to the command above.
 </Tip>
 
-## Step 2 — Install the Python SDK
+---
+
+## Step 2. Install the Python SDK
 
 Install the [`cellaflow`](https://pypi.org/project/cellaflow/) package from PyPI:
 
@@ -48,140 +78,243 @@ pip install cellaflow
 
 ---
 
-## Step 3 — Run your first durable workflow
+## Step 3. Write the workflow
 
-Create a file called `research_agent.py`:
+Create a file called `checkout_agent.py`:
 
-```python
+```python checkout_agent.py
+"""The landing-page quickstart: a step that places an order, and a crash on top of it.
+
+    python checkout_agent.py                  # places the order, then the pod dies
+    python checkout_agent.py <session-id>     # resumes -- does NOT place it again
+    cat orders.log                            # one line for that session, both times
+
+The ledger is append-only and every line carries its session id, because the
+engine outlives any single run. A ledger that reset itself would disagree with
+the engine the moment you resumed an older session, and then it could no longer
+adjudicate anything.
+
+The counter below lives INSIDE the tool body, so this script can only report
+what actually happened rather than what it hopes happened.
+"""
+
+import os
 import sys
-from cellaflow import workflow, step, tool, IdempotencyScope
+import uuid
+from pathlib import Path
 
-@tool(scope=IdempotencyScope.SCOPE_SESSION_WIDE)
-def search_web(query: str) -> dict:
-    print(f"  🌐 Calling search API for: '{query}'")
-    # Simulate an API call
-    return {"query": query, "results": ["Result A", "Result B", "Result C"]}
+from cellaflow import step, tool, workflow
+
+LEDGER = Path("orders.log")
+
+#: Every example honours this, so any of them can be pointed at an engine
+#: somewhere else.
+ENGINE = os.environ.get("CELLAFLOW_TARGET", "localhost:50051")
+
+#: Incremented inside the tool body. Stays 0 when the step is replayed, because
+#: a replayed step never enters its body.
+EXECUTED = {"orders": 0}
+
+#: Set before the workflow runs so the ledger line can name its session.
+SESSION = {"id": ""}
+
+
+def orders_for(session_id: str) -> list[str]:
+    if not LEDGER.exists():
+        return []
+    return [
+        line
+        for line in LEDGER.read_text().splitlines()
+        if line.startswith(session_id)
+    ]
+
+
+@tool(tool_name="place_order")
+def place_order(order_id: str, total_cents: int) -> dict:
+    """The irreversible one: the shop takes no idempotency key. Leased."""
+    EXECUTED["orders"] += 1
+    confirmation = f"ord_{uuid.uuid4().hex[:10]}"
+    with LEDGER.open("a") as fh:
+        fh.write(f"{SESSION['id']} {confirmation} {order_id} {total_cents}\n")
+    print(f"   🛒 PLACED {order_id} for {total_cents} -> {confirmation}")
+    return {"confirmation": confirmation, "total_cents": total_cents}
+
 
 @step
-def summarize(data: dict) -> str:
-    print(f"  📝 Summarizing {len(data['results'])} results...")
-    return f"Summary: found {len(data['results'])} items for '{data['query']}'"
+def build_receipt(order: dict, order_id: str) -> dict:
+    print("   🧾 Building receipt...")
+    return {"order_id": order_id, "confirmation": order["confirmation"]}
 
-@step
-def format_report(summary: str) -> str:
-    print(f"  📄 Formatting final report...")
-    return f"REPORT | {summary}"
 
-@workflow(version="1.0.0")
-def research_workflow(topic: str) -> str:
-    data = search_web(topic)
-    summary = summarize(data)
-    report = format_report(summary)
-    return report
+@workflow(version="1.0.0", target=ENGINE)
+def checkout(order_id: str, die_after_ordering: bool = False) -> dict:
+    order = place_order(order_id, 2499)
+
+    if die_after_ordering:
+        # The order is placed and recorded; the receipt is not built yet.
+        print("   💥 pod died")
+        sys.stdout.flush()
+        os._exit(17)
+
+    return build_receipt(order, order_id)
+
 
 if __name__ == "__main__":
-    session_id = sys.argv[1] if len(sys.argv) > 1 else None
-    
-    if session_id:
-        print(f"\n♻️  Resuming session: {session_id}\n")
-        result = research_workflow("autonomous AI architectures", _session_id=session_id)
+    resuming = len(sys.argv) > 1
+    session_id = sys.argv[1] if resuming else str(uuid.uuid4())
+
+    SESSION["id"] = session_id
+
+    if resuming:
+        print(f"\n♻️  Resuming session {session_id}\n")
     else:
-        result = research_workflow("autonomous AI architectures")
-    
-    print(f"\n✅ Result: {result}")
+        print(f"\n▶️  Session {session_id}")
+        print("   (save that id -- you need it to resume)\n")
+
+    result = checkout(
+        "ORD-1001", die_after_ordering=not resuming, _session_id=session_id
+    )
+
+    mine = orders_for(session_id)
+    total = len(LEDGER.read_text().splitlines()) if LEDGER.exists() else 0
+    print(f"\n✅ {result}")
+
+    if resuming and EXECUTED["orders"] == 0:
+        print("\n   place_order did NOT run -- replayed from the durable log.")
+        if not mine:
+            print(
+                "   (No ledger line here for that session: it was placed by a run"
+                "\n    in another directory. The engine still has the record, which"
+                "\n    is why the confirmation above is the original one.)"
+            )
+    elif resuming:
+        print(
+            "\n   ⚠️  place_order DID run. That session id had no history on this"
+            "\n       engine, so this started a new run rather than resuming one."
+            "\n       Use the id printed by your own first run."
+        )
+
+    print(f"   this session: {len(mine)} order(s)")
+    print(f"   orders.log:   {total} line(s), every run in this directory\n")
 ```
 
-Run it:
+Two decorators are doing the work:
 
-```bash
-python research_agent.py
-```
+- `place_order` is a **`@tool`**, so the engine leases it. The shop it calls takes
+  no idempotency key, like many order and booking endpoints, so calling it twice
+  would place two orders.
+- `build_receipt` is a **`@step`**, so its result is recorded in the session's
+  graph and replayed rather than recomputed.
 
-You'll see each step execute and print to stdout:
-
-```
-  🌐 Calling search API for: 'autonomous AI architectures'
-  📝 Summarizing 3 results...
-  📄 Formatting final report...
-
-✅ Result: REPORT | Summary: found 3 items for 'autonomous AI architectures'
-```
+The `EXECUTED` counter lives inside the tool body, so the script reports what
+actually happened rather than what it hopes happened. A replayed tool never
+enters its body, so the count stays at zero.
 
 ---
 
-## Step 4 — Simulate a crash and recover
-
-This is the wonder moment. Add a crash mid-workflow to see replay in action.
-
-Modify `research_agent.py` — add `import time` and insert a crash after `summarize`:
-
-```python
-@step
-def summarize(data: dict) -> str:
-    print(f"  📝 Summarizing {len(data['results'])} results...")
-    # Simulate a crash after this step completes
-    import os, time
-    time.sleep(0.5)
-    os.abort()  # 💥 Crash here
-    return f"Summary: found {len(data['results'])} items for '{data['query']}'"
-```
-
-Run once to get a session ID from the crash:
+## Step 4. Run it, and lose the process
 
 ```bash
-python research_agent.py
-# Prints session ID before crashing, e.g.:
-# Session started: 3f7491d9-e932-4467-bcda-370fb5c1a7e4
-#   🌐 Calling search API for: 'autonomous AI architectures'
-#   📝 Summarizing 3 results...
-# [crash]
+python checkout_agent.py
 ```
 
-<Tip>
-The session ID is logged automatically by the `@workflow` decorator. You can also retrieve it from `research_workflow.last_session_id` after a partial run.
-</Tip>
+```
+▶️  Session 55d727b1-37bf-4524-a48a-d27b3c3b79aa
+   (save that id -- you need it to resume)
 
-Remove the `os.abort()` line, then resume with the session ID:
+   🛒 PLACED ORD-1001 for 2499 -> ord_1c57fbd87b
+   💥 pod died
+```
+
+The order is placed and the engine has recorded it. Then `os._exit(17)` ends the
+process before the receipt is built, which is the worst moment for a pod to go
+away: the side effect has happened and the workflow has no idea.
+
+Copy the session id. It is the only thing you need to resume.
+
+---
+
+## Step 5. Resume the same session
 
 ```bash
-python research_agent.py 3f7491d9-e932-4467-bcda-370fb5c1a7e4
+python checkout_agent.py 55d727b1-37bf-4524-a48a-d27b3c3b79aa
 ```
 
-Output:
-
 ```
-♻️  Resuming session: 3f7491d9-e932-4467-bcda-370fb5c1a7e4
+♻️  Resuming session 55d727b1-37bf-4524-a48a-d27b3c3b79aa
 
-  ⚡ search_web [CACHED — 0ms]
-  ⚡ summarize  [CACHED — 0ms]
-  📄 Formatting final report...
+   🧾 Building receipt...
 
-✅ Result: REPORT | Summary: found 3 items for 'autonomous AI architectures'
+✅ {'order_id': 'ORD-1001', 'confirmation': 'ord_1c57fbd87b'}
+
+   place_order did NOT run -- replayed from the durable log.
+   this session: 1 order(s)
+   orders.log:   1 line(s), every run in this directory
 ```
+
+Check the ledger yourself, because the script's own reporting is not evidence:
+
+```bash
+cat orders.log
+# 55d727b1-37bf-4524-a48a-d27b3c3b79aa ord_1c57fbd87b ORD-1001 2499
+```
+
+One line, after two runs.
 
 <Check>
-**You just saw CellaFlow's core value:**
+**The confirmation id is identical across both runs.**
 
-- `search_web` and `summarize` were **not re-executed** — their results were replayed from the event graph in 0ms
-- Execution resumed live at `format_report`, exactly where the crash interrupted it
-- No re-spent API tokens. No duplicate side effects.
+`ord_1c57fbd87b` was generated by the first run, inside the tool body, and
+returned to the second run without that body executing. That is replay, not
+suppression. The resumed run receives the result the first run committed rather
+than skipping the step and carrying on with a hole where the confirmation should
+be.
 </Check>
+
+<Tip>
+`_session_id` is create-or-resume, so an unknown id starts a fresh session rather
+than failing. If you paste an id your engine never issued, `place_order` runs
+again and the script says so. Use the id printed by your own first run.
+</Tip>
+
+---
+
+## What you just proved
+
+- A tool that moves something in the real world ran **at most once** across a
+  crash and a restart, with no compensating logic in your code.
+- The resumed run got the original result back, by the same key, rather than a
+  gap it had to work around.
+- Nothing was suppressed globally. Run the script fresh again and a *different*
+  session places a new order, exactly as it should.
+
+Things worth trying before you trust it:
+
+- Resume the same id twice. Still one order.
+- Restart the engine between the two runs. The session is on disk, so resuming
+  after a restart behaves the same way.
 
 ---
 
 ## What's next?
 
-<CardGroup cols={3}>
+<CardGroup cols={2}>
   <Card title="Core Concepts" icon="book" href="/concepts">
-    Understand idempotency, replay semantics, and Non-Persistable Zones.
+    Idempotency scopes, replay semantics, and Non-Persistable Zones.
   </Card>
   <Card title="Python SDK Reference" icon="code" href="/sdks/python/overview">
-    Full `@workflow`, `@step`, `@tool`, and async guide.
+    The full `@workflow`, `@step` and `@tool` API, including async.
+  </Card>
+  <Card title="TypeScript SDK" icon="code" href="/sdks/typescript/overview">
+    The same model in TypeScript, with `durableTools` and `tool`.
   </Card>
   <Card title="Durable Tools" icon="shield-check" href="/sdks/python/durable-tools">
     Lease a tool call in CrewAI, AutoGen, LlamaIndex, OpenAI Agents or LangGraph.
   </Card>
   <Card title="LangGraph Integration" icon="git-branch" href="/sdks/python/langgraph">
     Drop in `CellaflowSaver` as a LangGraph checkpointer.
+  </Card>
+  <Card title="Self-Hosting" icon="server" href="/self-hosting">
+    TLS, authentication, volumes and the environment variables that matter.
   </Card>
 </CardGroup>
