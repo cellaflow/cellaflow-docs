@@ -1,0 +1,36 @@
+name: Quickstart sync
+
+# The quickstart embeds examples/quickstart/checkout_agent.py from cellaflow-sdks
+# verbatim. Drift can start in either repo, so this runs on changes here and on a
+# schedule to catch a change made over there, which never opens a pull request in
+# this one.
+#
+# Mintlify publishes from `main` on its own, so a failure here does not hold back
+# a deploy. It fails the pull request, and the weekly run is what surfaces drift
+# nobody is currently looking at.
+
+on:
+  pull_request:
+    paths:
+      - quickstart.mdx
+      - scripts/check_quickstart_sync.py
+      - .github/workflows/quickstart-sync.yml
+  push:
+    branches: [main]
+    paths:
+      - quickstart.mdx
+      - scripts/check_quickstart_sync.py
+      - .github/workflows/quickstart-sync.yml
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check_quickstart_sync.py

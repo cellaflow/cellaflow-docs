@@ -38,8 +38,10 @@ The docs preview will be available at `http://localhost:3000`.
 cellaflow-docs/
 ├── docs.json              # Mintlify configuration (navigation, theme, branding)
 ├── logos/                 # Logo and favicon assets
+├── scripts/
+│   └── check_quickstart_sync.py   # Keeps quickstart.mdx equal to the SDK example
 ├── index.mdx              # Landing / overview page
-├── quickstart.mdx         # 3-minute quickstart
+├── quickstart.mdx         # 3-minute quickstart (code is checked, see below)
 ├── concepts.mdx           # Core mental models
 ├── architecture.mdx       # System architecture
 ├── sdks/
@@ -51,6 +53,30 @@ cellaflow-docs/
 ├── api-reference.mdx      # gRPC API + grpcurl examples
 └── changelog.mdx          # Release notes
 ```
+
+## The quickstart code is checked
+
+`quickstart.mdx` embeds
+[`examples/quickstart/checkout_agent.py`](https://github.com/cellaflow/cellaflow-sdks/tree/main/examples/quickstart)
+from `cellaflow-sdks` verbatim, and a workflow fails if the two have drifted.
+
+```bash
+python3 scripts/check_quickstart_sync.py          # verify
+python3 scripts/check_quickstart_sync.py --fix    # rewrite the page from the example
+```
+
+The page has to show code that runs and that produces the output printed beside
+it. The check exists because the opposite already shipped once: a copy taken
+before a correctness fix landed left the page claiming an outcome the code shown
+could not produce.
+
+Edit the example in `cellaflow-sdks` and run `--fix` here. Editing the block in
+the page by hand puts the two out of step, which is what the check will tell you.
+
+It runs on pull requests that touch the page, on `main`, and weekly. The weekly
+run is the one that matters: drift usually starts with a change in the *other*
+repo, which never opens a pull request in this one. A failure does not hold back
+a deploy, because Mintlify publishes from `main` independently of GitHub Actions.
 
 ## Deployment
 
