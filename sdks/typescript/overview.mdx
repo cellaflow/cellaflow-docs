@@ -20,7 +20,7 @@ The official Cellaflow TypeScript SDK. Wraps the gRPC engine so a tool call happ
 npm install @cellaflow/sdk
 ```
 
-Requires Node 18 or newer. The package ships ESM with full type declarations.
+Requires Node 18.14.1 or newer. The package ships ESM with full type declarations.
 
 ---
 
@@ -86,3 +86,19 @@ Two things differ deliberately, and both are documented where they apply: Node h
 The `CellaflowSaver` checkpointer is Python-only today. LangGraph.js users keep
 their own checkpointer for state and lease side effects inside nodes, which is
 covered in [LangGraph.js](/sdks/typescript/langgraph).
+
+---
+
+## Connecting to an engine that requires a token
+
+Set `CELLAFLOW_API_KEY`, or pass `apiKey` to `CellaflowClient`, `durableTools`, `executionLease` or `taskLease`. Every call then sends it as `authorization: Bearer <key>`. This needs 0.10.0 or later. A key is never sent without TLS to another machine unless `CELLAFLOW_ALLOW_PLAINTEXT_KEY=true` or `allowPlaintextKey: true` allows it. See [Self-Hosting](/self-hosting#authentication).
+
+---
+
+## Upgrading from 0.9
+
+0.10.0 moves to Connect 2 and protobuf-es 2, which removes the four vulnerabilities `npm install` used to report. Three things can affect code written against 0.9:
+
+- **Exported messages are types, not classes.** Build and convert them with `create`, `toJson` and `toBinary` from `@bufbuild/protobuf` version 2, passing the `...Schema` export beside each type, as in `toJson(CommitStepResponseSchema, response)`. Add `@bufbuild/protobuf@^2` to your own dependencies to import them. Code that only reads fields from what the client returns is unaffected.
+- **`JSON.stringify` on a response throws**, because 64-bit fields are `bigint`. Use `toJson(<Schema>, response)` instead.
+- **Node 18.14.1 or later** is required.

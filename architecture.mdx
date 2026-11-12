@@ -136,12 +136,12 @@ grpcurl -plaintext localhost:50051 list
 The Python SDK connects over cleartext by default (`secure=False`). For production, point to your engine with TLS enabled and pass your API key:
 
 ```python
-@workflow(version="1.0.0", target="engine.internal:50051", secure=True)
+@workflow(version="1.0.0", target="engine.internal:50051", secure=True, api_key=key)
 def my_workflow(input: str) -> str:
     ...
 ```
 
-Set `CELLAFLOW_AUTH_TOKEN` in the engine's environment, and the SDK reads it automatically from your local environment.
+Or set `CELLAFLOW_API_KEY` to the same value on the engine and where your agents run, and the SDK sends it with no code change (SDK 0.10.0 or later). See [Self-Hosting](/self-hosting#authentication).
 
 ---
 

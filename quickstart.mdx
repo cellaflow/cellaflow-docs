@@ -33,7 +33,7 @@ docker run -d \
   -p 50051:50051 \
   -p 9090:9090 \
   -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
-  ghcr.io/cellaflow/cellaflow:latest
+  ghcr.io/cellaflow/cellaflow:0.3.0
 ```
 
 Verify it is healthy:
@@ -45,7 +45,7 @@ curl http://localhost:9090/health/ready
 
 <Warning>
 **`CELLAFLOW_ALLOW_UNAUTHENTICATED=true` is not optional here.** Without it, and
-without a `CELLAFLOW_AUTH_TOKEN`, the engine refuses to start and the container
+without a token, the engine refuses to start and the container
 exits immediately:
 
 ```
