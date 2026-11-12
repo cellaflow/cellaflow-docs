@@ -56,6 +56,7 @@ await durableTools(
   {
     target: "engine.internal:50051",   // defaults to localhost:50051
     secure: true,                       // TLS
+    apiKey: process.env.ENGINE_KEY,     // or set CELLAFLOW_API_KEY
     coordinationId: "ticket-4417",      // required by IdempotencyScope.SHARED
     workflowId: "support-agent",
     version: "1.2.0",

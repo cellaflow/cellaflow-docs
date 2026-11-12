@@ -20,11 +20,13 @@ docker run -d \
   -p 50051:50051 \
   -p 9090:9090 \
   -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
-  ghcr.io/cellaflow/cellaflow:latest
+  ghcr.io/cellaflow/cellaflow:0.3.0
 ```
 
+Pin a version, as above, rather than `latest`. A version's image is never rewritten from 0.3.0 on, so you always know which build, and which licence terms, you are running; `latest` moves with every release.
+
 <Warning>
-**The engine refuses to start without `CELLAFLOW_AUTH_TOKEN` or
+**The engine refuses to start without a token or
 `CELLAFLOW_ALLOW_UNAUTHENTICATED=true`.** With neither set, every caller would be
 accepted, and nothing in the process can tell a laptop from a reachable host, so
 the decision is yours to state rather than the engine's to guess. Omit both and
@@ -66,7 +68,7 @@ docker run -d \
   -p 9090:9090 \
   -v $(pwd)/cellaflow-data:/data \
   -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
-  ghcr.io/cellaflow/cellaflow:latest
+  ghcr.io/cellaflow/cellaflow:0.3.0
 ```
 
 ---
@@ -79,14 +81,14 @@ For local multi-service setups, use Docker Compose:
 # docker-compose.yml
 services:
   cellaflow:
-    image: ghcr.io/cellaflow/cellaflow:latest
+    image: ghcr.io/cellaflow/cellaflow:0.3.0
     ports:
       - "50051:50051"
       - "9090:9090"
     volumes:
       - ./cellaflow-data:/data
     environment:
-      - CELLAFLOW_AUTH_TOKEN=your-secret-key
+      - CELLAFLOW_API_KEY=your-secret-key
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9090/health/ready"]
@@ -103,28 +105,46 @@ docker compose up -d
 
 ## Authentication
 
-Set a Bearer token to require authentication on all gRPC calls:
+Start the engine with a token to require it on every gRPC call:
 
 ```bash
 docker run -d \
   --name cellaflow \
   -p 50051:50051 \
-  -e CELLAFLOW_AUTH_TOKEN=your-secret-key \
-  ghcr.io/cellaflow/cellaflow:latest
+  -e CELLAFLOW_API_KEY=your-secret-key \
+  ghcr.io/cellaflow/cellaflow:0.3.0
 ```
 
-The Python SDK reads `CELLAFLOW_AUTH_TOKEN` from your local environment automatically, or you can pass it explicitly:
+Give your agents the same value in `CELLAFLOW_API_KEY`, and every call the SDK makes sends it, with no code change:
 
-```python
-# Set in environment
-export CELLAFLOW_AUTH_TOKEN=your-secret-key
+```bash
+export CELLAFLOW_API_KEY=your-secret-key
+```
 
-# Or pass to workflow (advanced)
-@workflow(version="1.0.0", target="engine:50051", secure=True)
+Or pass it explicitly:
+
+<CodeGroup>
+```python Python
+@workflow(version="1.0.0", target="engine.internal:50051", secure=True, api_key=key)
 def my_workflow(input: str) -> str: ...
 ```
 
-The engine accepts tokens via both `Authorization: Bearer <token>` and `x-api-key: <token>` headers.
+```ts TypeScript
+await durableTools(threadId, { target: "engine.internal:50051", secure: true, apiKey: key }, async () => {
+  // ...
+});
+```
+</CodeGroup>
+
+<Note>
+Sending a key needs SDK **0.10.0 or later** (`cellaflow` on PyPI, `@cellaflow/sdk` on npm). Earlier
+versions send no key, so an engine that requires one refuses every call with `UNAUTHENTICATED`.
+</Note>
+
+- **One variable on both sides.** The SDKs read only `CELLAFLOW_API_KEY`. The engine reads `CELLAFLOW_AUTH_TOKEN` first and falls back to `CELLAFLOW_API_KEY`, so set only `CELLAFLOW_API_KEY` on the engine too. Leave `CELLAFLOW_AUTH_TOKEN` unset rather than blank: a blank one counts as set and leaves the engine with no token. Compose writes a blank value for `${VAR}` when the variable is unset.
+- **A blank value means no key**, and the SDKs read no other variable.
+- **No key in plaintext to another machine.** With `secure=False` (the default) and a target that is not this machine, the SDK refuses the call rather than send the key in the clear. On a network you trust, such as a Compose network or a Kubernetes service, set `CELLAFLOW_ALLOW_PLAINTEXT_KEY=true`, and the SDK warns once per target instead. Anywhere else, use [TLS](#tls).
+- **On the wire** the key travels as `authorization: Bearer <key>`. The engine also accepts `x-api-key: <key>`.
 
 ---
 
@@ -138,17 +158,19 @@ docker run -d \
   -p 50051:50051 \
   -e CELLAFLOW_TLS_CERT=/certs/cert.pem \
   -e CELLAFLOW_TLS_KEY=/certs/key.pem \
-  -e CELLAFLOW_AUTH_TOKEN=your-secret-key \
+  -e CELLAFLOW_API_KEY=your-secret-key \
   -v $(pwd)/certs:/certs \
-  ghcr.io/cellaflow/cellaflow:latest
+  ghcr.io/cellaflow/cellaflow:0.3.0
 ```
 
-Connect from the SDK with `secure=True`:
+Connect from the SDK with `secure=True` (`secure: true` in TypeScript):
 
 ```python
 @workflow(version="1.0.0", target="engine.internal:50051", secure=True)
 def my_workflow(input: str) -> str: ...
 ```
+
+The SDKs trust the usual public certificate authorities. For a certificate issued by your own CA, or a self-signed one, point them at it: `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=/path/to/ca.pem` for Python, which gRPC then trusts instead of its bundled roots, and `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` for Node, which adds it to Node's.
 
 ---
 
@@ -165,12 +187,12 @@ image sets them itself. The distinction matters when running the binary directly
 
 | Variable | Description | Default |
 |:---|:---|:---|
-| `CELLAFLOW_AUTH_TOKEN` | API key for Bearer / `x-api-key` authentication | None |
-| `CELLAFLOW_ALLOW_UNAUTHENTICATED` | Serve with no credentials, deliberately. Required to boot when `CELLAFLOW_AUTH_TOKEN` is unset | `false` |
+| `CELLAFLOW_API_KEY` | The token every call must present, as `authorization: Bearer` or `x-api-key`. The engine also reads `CELLAFLOW_AUTH_TOKEN`, before this one; set only one, and leave the other unset rather than blank | None |
+| `CELLAFLOW_ALLOW_UNAUTHENTICATED` | Serve with no credentials, deliberately. Required to boot when no token is set | `false` |
 | `CELLAFLOW_TLS_CERT` | Path to TLS certificate file (PEM) | None (cleartext) |
 | `CELLAFLOW_TLS_KEY` | Path to TLS private key file (PEM) | None (cleartext) |
 | `CELLAFLOW_MANAGEMENT_PORT` | HTTP health server port | `9090` |
-| `CELLAFLOW_OTLP_ENDPOINT` | OTLP telemetry endpoint | `http://localhost:4317` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/gRPC endpoint for traces and metrics. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` set one signal each, and `CELLAFLOW_OTLP_ENDPOINT` is read last | None: nothing is exported |
 | `CELLAFLOW_LOG_LEVEL` | Log level | `info` |
 | `CELLAFLOW_BACKEND` | Storage backend | `rocksdb` |
 | `CELLAFLOW_SESSION_IDLE_TIMEOUT_SECS` | Idle seconds before a session evicts from memory | `1800` |
@@ -241,7 +263,7 @@ docker run -d \
   -p 50051:50051 \
   -e CELLAFLOW_OTLP_ENDPOINT=http://jaeger:4317 \
   -e CELLAFLOW_ALLOW_UNAUTHENTICATED=true \
-  ghcr.io/cellaflow/cellaflow:latest
+  ghcr.io/cellaflow/cellaflow:0.3.0
 ```
 
 Open Jaeger UI at `http://localhost:16686` to inspect traces.

@@ -124,7 +124,7 @@ def my_workflow(input: str) -> str: ...
 def my_workflow(input: str) -> str: ...
 ```
 
-Environment variable `CELLAFLOW_AUTH_TOKEN` is read automatically for authenticated connections.
+For an engine that requires a token, set `CELLAFLOW_API_KEY`, or pass `api_key=` to `@workflow`, `durable_tools`, the lease helpers or `CellaflowClient`. This needs SDK 0.10.0 or later. A key is never sent without TLS to another machine unless `CELLAFLOW_ALLOW_PLAINTEXT_KEY=true` allows it. See [Self-Hosting](/self-hosting#authentication).
 
 ---
 

@@ -217,7 +217,7 @@ checkpointer = CellaflowSaver(
 )
 ```
 
-For production, set `CELLAFLOW_AUTH_TOKEN` in your engine environment, and the SDK reads the token automatically.
+For an engine that requires a token, set `CELLAFLOW_API_KEY` where the agent runs, or pass `api_key=` to `CellaflowSaver` (SDK 0.10.0 or later). If you pass your own `client=`, give the key to that `CellaflowClient` instead: the saver refuses both, since it would ignore the second. See [Self-Hosting](/self-hosting#authentication).
 
 ---
 
