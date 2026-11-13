@@ -1,6 +1,6 @@
 ---
 title: "Changelog"
-description: "Release notes and version history for the Cellaflow engine and Python SDK."
+description: "Release notes and version history for the Cellaflow engine and SDKs."
 icon: "history"
 ---
 
@@ -8,11 +8,42 @@ icon: "history"
 
 ---
 
-## Python SDK
+## SDKs (Python and TypeScript)
 
-### v0.7.0 — Latest
+From 0.8.0 the Python package (`cellaflow`) and the TypeScript package (`@cellaflow/sdk`) are released
+together, under one version number. Each package's full changelog is in the
+[SDK repository](https://github.com/cellaflow/cellaflow-sdks).
 
-- 🔒 **Distributed Execution Lease Primitive (`CEL-157`)** — added native Python SDK support for the `task_execution_lease` primitive, acting as a distributed lock with liveness heartbeating.
+### v0.10.0 (Latest, 2026-11-12)
+
+- **API keys.** Both SDKs can talk to an engine that requires a token. Pass `api_key` (Python) or `apiKey` (TypeScript), or set `CELLAFLOW_API_KEY`, and every call sends it as `authorization: Bearer <key>`. A blank value means no key, and no other variable is read. See [Self-Hosting](/self-hosting#authentication).
+- **No key in plaintext to another machine.** Without TLS, a key bound for anything but this machine is refused unless `CELLAFLOW_ALLOW_PLAINTEXT_KEY=true` allows it, for a network you trust.
+- **TypeScript moves to Connect 2 and protobuf-es 2,** so `npm install` no longer reports vulnerabilities. Exported messages are now plain types with a `...Schema` export beside each, `JSON.stringify` on a response throws (64-bit fields are `bigint`), and Node 18.14.1 or later is required. See [Upgrading from 0.9](/sdks/typescript/overview#upgrading-from-0-9).
+- **Python requires grpcio 1.71.0 or later,** which the generated code always needed.
+
+Works with engine 0.2.0 and later; tested against 0.3.0.
+
+### v0.9.0 (2026-11-05)
+
+- **A step's failure is recorded and replayed.** When a workflow catches a step's exception and carries on, the failure is recorded at its position, and a resumed Python `@workflow` raises it again there instead of running the step, so it takes the branch it took the first time.
+- **A resume refuses rather than guesses.** When it cannot reproduce what happened, it stops with `ReplayDivergedError` or `FailureNotReplayableError`, and the refusal ends the run even if the workflow catches it.
+- **A shared result is recorded in the session that received it,** so that session can be resumed.
+- **A resumed `durable_tools` / `durableTools` session can run a tool it had not reached.**
+- **TypeScript:** an execution lease is treated as lost no later than the engine treats it as expired.
+
+### v0.8.0 (2026-10-14)
+
+- **The coordination id is sent to the engine and recorded on every step.** The engine stores it as the session's default, and a resumed session adopts it, so `SCOPE_SHARED` tools keep deriving the same keys. Resuming with a different one is refused.
+- **One call can run under its own coordination id:** `_coordination_id=` on a Python `@step` or `@tool` call, `withCoordinationId(id)` on a TypeScript leased tool.
+- **Coordination ids are validated:** no colons, no leading or trailing whitespace, at most 256 bytes.
+
+---
+
+## Python SDK, before 0.8.0
+
+### v0.7.0
+
+- 🔒 **Distributed Execution Lease Primitive** — added native Python SDK support for the `task_execution_lease` primitive, acting as a distributed lock with liveness heartbeating.
 - ⚙️ **Context Managers & Decorators** — added synchronous `execution_lease` and asynchronous `async_execution_lease` context managers, plus a first-class `@task_lease` decorator for wrapping execution entry points.
 - 🛡️ **Lease Loss Preemption** — if the heartbeat fails and the lease expires while the main thread/task is running, it aborts execution (e.g., by injecting `asyncio.CancelledError` or invoking a callback).
 - 🔑 **Fencing Tokens** — yields a fencing token accessible downstream to enforce the lock.
@@ -98,7 +129,21 @@ Install: [`pip install cellaflow`](https://pypi.org/project/cellaflow/)
 
 ## Cellaflow Engine
 
-### Latest
+Pin a version (`ghcr.io/cellaflow/cellaflow:0.3.0`) rather than `latest`. From 0.3.0, a version's image is written once and never changes.
+
+### v0.3.0 (Latest, 2026-11-12)
+
+- **Telemetry is off unless you configure it.** The engine no longer exports to a default OTLP endpoint. Set `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`); `CELLAFLOW_OTLP_ENDPOINT` is read last. A telemetry failure never stops boot, and spans are flushed at exit. If you relied on the old default endpoint, set it explicitly.
+- **Log fields print as their values,** not as `Some("...")`.
+- **The boot banner reports the authentication mode** in a new `auth=` field.
+- **Image tags are written once per version.** Until 0.3.0, later builds were also published under `:0.2.0`, so that tag no longer names the 0.2.0 release. Pin `:0.3.0`. A new `:edge` tag follows unreleased changes and is not for production.
+
+### v0.2.0 (2026-10-16)
+
+- **Authentication is required by default.** The engine refuses to start without a token unless `CELLAFLOW_ALLOW_UNAUTHENTICATED=true` is set deliberately.
+- **An unknown `CELLAFLOW_BACKEND` is refused at boot,** where it used to fall back to RocksDB.
+
+### Capabilities
 
 - ✅ **Per-commit fsync durability (`CELLAFLOW_SYNC_WRITES`)** — synchronously flushes durable writes to RocksDB WAL before acknowledging them (default `true`), ensuring committed step outputs and timer events survive host power loss
 - ✅ **Hardened durable write safety** — all storage write paths (including `record_timer_fired`) strictly use explicit sync options, preventing non-durable write leakage
@@ -118,4 +163,4 @@ Install: [`pip install cellaflow`](https://pypi.org/project/cellaflow/)
 - ✅ OTLP telemetry (traces + metrics)
 - ✅ Health check HTTP server (`/health/ready`)
 
-Docker: `ghcr.io/cellaflow/cellaflow:latest`
+Docker: `ghcr.io/cellaflow/cellaflow:0.3.0`
