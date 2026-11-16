@@ -198,11 +198,11 @@ image sets them itself. The distinction matters when running the binary directly
 | `CELLAFLOW_SESSION_IDLE_TIMEOUT_SECS` | Idle seconds before a session evicts from memory | `1800` |
 | `CELLAFLOW_ACTOR_SEND_TIMEOUT_MS` | Wait for room on a session's mailbox before shedding with `RESOURCE_EXHAUSTED` | `5000` |
 | `CELLAFLOW_MAX_LEASE_LIFETIME_MS` | Ceiling on a single lease, independent of heartbeats. A requested TTL or renewal above it is granted the ceiling | `3600000` (1 hour) |
-| `CELLAFLOW_DEFAULT_LEASE_TTL_MS` | TTL of a lease whose request asks for none: how long another caller waits to take over a holder that died without asking for a TTL of its own. If set, it must be at least `4` and at most `CELLAFLOW_MAX_LEASE_LIFETIME_MS`, or the engine refuses to start. Values under about a second leave a client too little time to renew | `20000` (20 s), or `CELLAFLOW_MAX_LEASE_LIFETIME_MS` if lower |
+| `CELLAFLOW_DEFAULT_LEASE_TTL_MS` | TTL of a lease whose request asks for none: how long another caller waits to take over a holder that died without asking for a TTL of its own. If set, it must be at least `4` and at most `CELLAFLOW_MAX_LEASE_LIFETIME_MS`, or the engine refuses to start; a value that is not a number is ignored. Values under about a second leave a client too little time to renew | `20000` (20 s), or `CELLAFLOW_MAX_LEASE_LIFETIME_MS` if lower |
 | `CELLAFLOW_SYNC_WRITES` | fsync each durable write before acknowledging it | `true` |
 
 Most variables also accept an unprefixed fallback (`HOST`, `PORT`, `DB_PATH`, `AUTH_TOKEN`,
-`API_KEY`).
+`API_KEY`, `DEFAULT_LEASE_TTL_MS`).
 
 <Warning>
 **Running the binary directly? `CELLAFLOW_HOST` defaults to `[::1]` — loopback only.** The engine
