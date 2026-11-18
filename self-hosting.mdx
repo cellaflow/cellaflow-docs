@@ -91,7 +91,16 @@ services:
       - CELLAFLOW_API_KEY=your-secret-key
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/health/ready"]
+      # The image carries no curl, wget or nc, so a probe built on any of them
+      # fails forever and the container never reports healthy. bash is present
+      # and can open a socket. Grepping for 200 rather than just connecting is
+      # the part that matters: /health/ready answers 503 until boot recovery
+      # finishes, and a container that is listening is not yet serving.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/9090 && printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3 && grep -q "200 OK" <&3'
       interval: 10s
       timeout: 5s
       retries: 5
