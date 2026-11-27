@@ -59,7 +59,30 @@ curl http://localhost:9090/health/ready
 
 ## Persistent Storage
 
-By default, RocksDB data is written inside the container and lost on restart. For persistent state, mount a volume:
+The engine keeps all of its state in RocksDB under `/data`:
+- sessions and their step history;
+- the idempotency records and leases that stop a tool call running twice;
+- pending timers.
+
+Restarting the same container keeps that state. A new container without the same volume starts empty.
+
+<Warning>
+**Without a persistent volume at `/data`, a replaced container loses the engine's state.**
+
+The new engine has no record of what ran:
+- a retried tool call runs again: a second charge, a second email;
+- a resumed session is not found;
+- a pending timer never fires.
+
+That happens wherever the container's filesystem does not outlive the container:
+- `docker run` without `-v`;
+- `docker rm` followed by a new `docker run`;
+- container platforms where you run the image yourself, such as AWS ECS on Fargate, Google Cloud Run, Render or Railway, unless persistent storage is attached.
+
+On those, attach a persistent disk at `/data` and run one engine per disk. RocksDB expects a local disk, so network file systems such as NFS or EFS are not recommended. On Kubernetes, the Helm chart mounts a PersistentVolumeClaim by default.
+</Warning>
+
+Mount a volume:
 
 ```bash
 docker run -d \

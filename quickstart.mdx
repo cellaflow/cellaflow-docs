@@ -61,9 +61,12 @@ than guessing. For anything beyond local development, set a token instead. See
 </Warning>
 
 <Tip>
-The engine persists state to RocksDB inside the container, which is lost when the
-container is removed. To keep it, mount a volume: add `-v $(pwd)/cellaflow-data:/data`
-to the command above.
+The engine keeps its state in `/data` inside the container. That's fine for this
+walkthrough, but the state is gone once the container is removed. To keep it, add
+`-v $(pwd)/cellaflow-data:/data` to the command above. Before running the engine
+anywhere other than your machine, read
+[Persistent Storage](/self-hosting#persistent-storage): an engine that loses its
+state runs retried tool calls again.
 </Tip>
 
 ---
